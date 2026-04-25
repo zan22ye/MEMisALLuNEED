@@ -25,6 +25,16 @@ def validate_memory_state(state: str) -> None:
         raise ValueError(f"Invalid memory state: {state}. Allowed: {allowed}")
 
 
+def validate_memory_content(content: str) -> None:
+    if not content.strip():
+        raise ValueError("Memory content cannot be empty")
+
+
+def validate_confidence(confidence: float) -> None:
+    if confidence < 0.0 or confidence > 1.0:
+        raise ValueError("Confidence must be between 0.0 and 1.0")
+
+
 @dataclass(frozen=True)
 class MemoryItem:
     id: str
@@ -56,12 +66,15 @@ class MemoryItem:
     def from_dict(cls, data: dict[str, Any]) -> "MemoryItem":
         validate_memory_type(data["type"])
         validate_memory_state(data["state"])
+        validate_memory_content(data["content"])
+        confidence = float(data["confidence"])
+        validate_confidence(confidence)
         return cls(
             id=data["id"],
             type=data["type"],
             content=data["content"],
             state=data["state"],
-            confidence=float(data["confidence"]),
+            confidence=confidence,
             metadata=dict(data.get("metadata") or {}),
             created_at=data["created_at"],
             updated_at=data["updated_at"],
@@ -78,12 +91,10 @@ def create_memory_item(
     confidence: float = 1.0,
     metadata: dict[str, Any] | None = None,
 ) -> MemoryItem:
-    if not content.strip():
-        raise ValueError("Memory content cannot be empty")
+    validate_memory_content(content)
     validate_memory_type(memory_type)
     validate_memory_state(state)
-    if confidence < 0.0 or confidence > 1.0:
-        raise ValueError("Confidence must be between 0.0 and 1.0")
+    validate_confidence(confidence)
     now = utc_now()
     return MemoryItem(
         id=str(uuid4()),
@@ -91,7 +102,7 @@ def create_memory_item(
         content=content,
         state=state,
         confidence=confidence,
-        metadata=metadata or {},
+        metadata=dict(metadata or {}),
         created_at=now,
         updated_at=now,
     )

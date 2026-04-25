@@ -43,3 +43,29 @@ def test_invalid_memory_type_is_rejected():
 def test_invalid_memory_state_is_rejected():
     with pytest.raises(ValueError, match="Invalid memory state"):
         create_memory_item("content", state="invalid")
+
+
+def test_empty_memory_content_is_rejected():
+    with pytest.raises(ValueError, match="Memory content cannot be empty"):
+        create_memory_item("   ")
+
+
+def test_out_of_range_confidence_is_rejected():
+    with pytest.raises(ValueError, match="Confidence must be between 0.0 and 1.0"):
+        create_memory_item("content", confidence=1.1)
+
+
+def test_from_dict_rejects_empty_content():
+    data = create_memory_item("content").to_dict()
+    data["content"] = ""
+
+    with pytest.raises(ValueError, match="Memory content cannot be empty"):
+        MemoryItem.from_dict(data)
+
+
+def test_from_dict_rejects_out_of_range_confidence():
+    data = create_memory_item("content").to_dict()
+    data["confidence"] = -0.1
+
+    with pytest.raises(ValueError, match="Confidence must be between 0.0 and 1.0"):
+        MemoryItem.from_dict(data)
