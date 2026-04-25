@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from math import isfinite
+from types import MappingProxyType
 from typing import Any
 from uuid import uuid4
 
@@ -31,7 +33,7 @@ def validate_memory_content(content: str) -> None:
 
 
 def validate_confidence(confidence: float) -> None:
-    if confidence < 0.0 or confidence > 1.0:
+    if not isfinite(confidence) or confidence < 0.0 or confidence > 1.0:
         raise ValueError("Confidence must be between 0.0 and 1.0")
 
 
@@ -47,6 +49,9 @@ class MemoryItem:
     updated_at: str = field(default_factory=utc_now)
     usage_count: int = 0
     last_recalled_at: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "metadata", MappingProxyType(dict(self.metadata)))
 
     def to_dict(self) -> dict[str, Any]:
         return {
