@@ -59,6 +59,8 @@ The first runnable prototype should provide:
 
 Use SQLite as the primary storage and JSONL as the export format.
 
+Do not add an `embedding` column to SQLite. Future semantic recall should use a dedicated vector database or vector index rather than storing vectors directly in the SQLite memory table.
+
 Suggested package layout:
 
 ```text

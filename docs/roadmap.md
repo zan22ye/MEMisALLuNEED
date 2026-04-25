@@ -84,7 +84,6 @@ Phase 1 should start with a `memories` table:
 - `state`
 - `confidence`
 - `metadata`
-- `embedding`
 - `created_at`
 - `updated_at`
 - `usage_count`
@@ -130,7 +129,11 @@ Core objects:
 
 Phase 1 should use a lightweight text similarity baseline first.
 
-Embedding support can be added later, but the initial prototype should avoid unnecessary dependencies and prove the storage-recall loop first.
+Phase 1 should not store embeddings in SQLite.
+
+Vector recall should be introduced later through a dedicated vector database, not through an `embedding` column in the SQLite memory table.
+
+The initial prototype should avoid unnecessary dependencies and prove the storage-recall loop first.
 
 ### Out of Scope
 
@@ -278,6 +281,10 @@ The system stores:
 ### Goal
 
 Turn the prototype into a research-oriented system with observable memory growth and evaluation.
+
+This phase can also introduce a dedicated vector database for scalable semantic recall.
+
+Vector search should be treated as a separate recall index that works alongside the canonical SQLite memory store. SQLite remains the source of truth for memory metadata and structured records; the vector database stores and searches vector representations.
 
 ### Memory Graph
 
