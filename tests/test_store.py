@@ -35,6 +35,15 @@ def test_memory_item_round_trip_dict():
     assert json.loads(json.dumps(restored.to_dict()))["metadata"] == {"source": "spec"}
 
 
+def test_to_dict_metadata_mutation_does_not_mutate_item():
+    item = create_memory_item("content", metadata={"source": "spec"})
+    serialized = item.to_dict()
+
+    serialized["metadata"]["source"] = "changed"
+
+    assert item.metadata == {"source": "spec"}
+
+
 def test_invalid_memory_type_is_rejected():
     with pytest.raises(ValueError, match="Invalid memory type"):
         create_memory_item("content", memory_type="invalid")

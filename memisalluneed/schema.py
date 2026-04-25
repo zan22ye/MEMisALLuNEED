@@ -55,7 +55,7 @@ class MemoryItem:
             "content": self.content,
             "state": self.state,
             "confidence": self.confidence,
-            "metadata": self.metadata,
+            "metadata": dict(self.metadata),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "usage_count": self.usage_count,
