@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This repository is currently in the concept and early implementation planning stage.
+This repository has completed Phase 1 of the initial implementation.
 
 ## Project Summary
 
@@ -32,6 +32,12 @@ The system should rely on a growing memory substrate rather than an ever-growing
 - `README.md`: English project overview.
 - `README_zh.md`: Chinese project overview.
 - `docs/roadmap.md`: staged implementation roadmap.
+- `docs/phase1-spec.md`: Phase 1 CLI memory substrate spec.
+- `docs/superpowers/plans/2026-04-25-phase1-cli-memory-substrate.md`: Phase 1 implementation plan.
+- `pyproject.toml`: Python package metadata and `mem` CLI entry point.
+- `memisalluneed/`: Phase 1 Python package.
+- `tests/`: Phase 1 test suite.
+- `examples/memories.jsonl`: versioned example memory data.
 
 ## Implementation Roadmap
 
@@ -44,11 +50,11 @@ The current roadmap has six phases:
 5. Phase 4: External knowledge acquisition.
 6. Phase 5: Memory graph and evaluation.
 
-Phase 1 should be implemented first as a CLI demo.
+Phase 1 has been implemented as a CLI demo.
 
-## Phase 1 Direction
+## Phase 1 Status
 
-The first runnable prototype should provide:
+Phase 1 provides:
 
 - `mem init`
 - `mem add`
@@ -57,11 +63,11 @@ The first runnable prototype should provide:
 - `mem search <query>`
 - `mem export`
 
-Use SQLite as the primary storage and JSONL as the export format.
+SQLite is the primary storage and JSONL is the export format.
 
 Do not add an `embedding` column to SQLite. Future semantic recall should use a dedicated vector database or vector index rather than storing vectors directly in the SQLite memory table.
 
-Suggested package layout:
+Implemented package layout:
 
 ```text
 memisalluneed/
@@ -72,27 +78,35 @@ memisalluneed/
   search.py
   export.py
 tests/
+  test_cli.py
+  test_export.py
   test_store.py
   test_search.py
 ```
 
-## Scope Guidance
+Phase 1 intentionally uses keyword/token-overlap search only. It does not use embeddings or a vector database.
 
-For Phase 1, keep implementation minimal.
+Validation evidence from implementation:
+
+- `pytest -q` passed with 28 tests.
+- Editable install in a temporary venv succeeded.
+- `mem --help` showed all Phase 1 commands.
+- Acceptance flow passed for `mem init`, `mem add`, `mem list`, `mem search`, and `mem export`.
+
+## Next Phase Guidance
+
+The next implementation phase should be Phase 2: Session to Memory Formation.
 
 Do:
 
-- implement local memory storage;
-- implement basic memory item schema;
-- implement simple text search;
-- implement JSONL export;
-- add minimal tests for store and search.
+- add `mem chat`;
+- enforce latest `k` turns or latest `k` tokens in active session context;
+- roll older session context into memory;
+- run lightweight per-turn memory checks;
+- create memory candidates from important new information.
 
-Do not yet implement:
+Do not yet implement unless Phase 2 spec changes:
 
-- LLM-based memory formation;
-- session rolling write;
-- external knowledge acquisition;
 - graph reasoning;
 - conflict detection;
 - benchmark evaluation.
@@ -103,3 +117,4 @@ Do not yet implement:
 - Preserve the conceptual language already established in `README.md`, `README_zh.md`, and `docs/roadmap.md`.
 - Before implementing a new phase, update the roadmap if the plan changes.
 - Do not commit `.codex`; it is currently an untracked local file.
+- Keep `.memisalluneed/`, `.worktrees/`, cache files, and generated local runtime artifacts out of git.
