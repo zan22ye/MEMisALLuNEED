@@ -3,6 +3,7 @@ import json
 import pytest
 
 from memisalluneed.schema import MemoryItem, create_memory_item
+from memisalluneed.store import MemoryStore
 
 
 def test_create_memory_item_defaults():
@@ -107,3 +108,49 @@ def test_from_dict_rejects_nan_confidence():
 
     with pytest.raises(ValueError, match="Confidence must be between 0.0 and 1.0"):
         MemoryItem.from_dict(data)
+
+
+def test_store_initializes_database(tmp_path):
+    db_path = tmp_path / "memory.db"
+
+    store = MemoryStore(db_path)
+    store.init()
+
+    assert db_path.exists()
+
+
+def test_store_add_list_and_get(tmp_path):
+    db_path = tmp_path / "memory.db"
+    store = MemoryStore(db_path)
+    store.init()
+    item = create_memory_item("Memory is the core substrate.")
+
+    store.add(item)
+    items = store.list(limit=10)
+    fetched = store.get(item.id)
+
+    assert [stored.id for stored in items] == [item.id]
+    assert fetched == item
+
+
+def test_store_returns_none_for_missing_item(tmp_path):
+    db_path = tmp_path / "memory.db"
+    store = MemoryStore(db_path)
+    store.init()
+
+    assert store.get("missing") is None
+
+
+def test_store_updates_recall_metadata(tmp_path):
+    db_path = tmp_path / "memory.db"
+    store = MemoryStore(db_path)
+    store.init()
+    item = create_memory_item("Recall should update metadata.")
+    store.add(item)
+
+    store.mark_recalled([item.id])
+    recalled = store.get(item.id)
+
+    assert recalled is not None
+    assert recalled.usage_count == 1
+    assert recalled.last_recalled_at is not None
