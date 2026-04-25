@@ -223,6 +223,21 @@ MEMisALLuNEED 把记忆视为核心的成长结构：
 
 最终目标是构建一个能通过交互持续成长的系统，而不是一个只在上下文窗口内临时回答问题的系统。
 
+## Phase 1 CLI 快速开始
+
+第一个可运行里程碑是 `mem` CLI。
+
+```bash
+mem init
+mem add "Everything before the current moment can be treated as memory."
+mem add "External knowledge is acquired only when memory is insufficient."
+mem list
+mem search "when should external knowledge be used"
+mem export
+```
+
+本地运行数据存放在 `.memisalluneed/memory.db`，该目录不会提交到 git。
+
 ## 项目状态
 
 当前仓库处于概念和设计阶段。

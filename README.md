@@ -221,6 +221,21 @@ MEMisALLuNEED treats memory as the core growing structure:
 
 The result is a system that can grow through interaction rather than merely respond within a context window.
 
+## Phase 1 CLI Quickstart
+
+The first runnable milestone is the `mem` CLI.
+
+```bash
+mem init
+mem add "Everything before the current moment can be treated as memory."
+mem add "External knowledge is acquired only when memory is insufficient."
+mem list
+mem search "when should external knowledge be used"
+mem export
+```
+
+Runtime data is stored in `.memisalluneed/memory.db`, which is ignored by git.
+
 ## Project Status
 
 This repository is currently in the concept and design stage.
