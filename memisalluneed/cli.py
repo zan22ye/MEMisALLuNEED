@@ -7,14 +7,15 @@ from pathlib import Path
 from typing import Sequence
 from uuid import uuid4
 
-from memisalluneed.config import AppConfig, DEFAULT_CONFIG_PATH
+from memisalluneed.config import AppConfig, ConfigOverrides, DEFAULT_CONFIG_PATH
+from memisalluneed.config import load_config
 from memisalluneed.export import export_jsonl, export_jsonl_text
 from memisalluneed.formation import FormationService
 from memisalluneed.models.base import ChatMessage, ChatModel
 from memisalluneed.schema import create_memory_item
 from memisalluneed.schema import utc_now
 from memisalluneed.search import search_memories
-from memisalluneed.session import SessionState, SessionTurn
+from memisalluneed.session import DEFAULT_SESSION_PATH, SessionState, SessionTurn
 from memisalluneed.store import DEFAULT_DB_PATH, MemoryStore
 
 
@@ -193,6 +194,97 @@ def run_chat_once(
     return assistant_reply
 
 
+def flush_session_on_exit(
+    session_path: str | Path,
+    formation_model: ChatModel,
+    store: MemoryStore,
+) -> list:
+    session = SessionState.load(session_path)
+    if not session.turns:
+        session.clear_file(session_path)
+        return []
+
+    written = FormationService(model=formation_model, store=store).form_from_exit_flush(
+        session.turns
+    )
+    session.clear_file(session_path)
+    return written
+
+
+def _config_overrides_from_args(args) -> ConfigOverrides:
+    return ConfigOverrides(
+        chat_provider=args.chat_provider,
+        chat_model=args.chat_model,
+        formation_provider=args.formation_provider,
+        formation_model=args.formation_model,
+        max_turns=args.max_turns,
+        max_tokens=args.max_tokens,
+        recall_top_k=args.recall_top_k,
+    )
+
+
+def _session_path_for_config(config_path: str | Path) -> Path:
+    path = Path(config_path)
+    if path == DEFAULT_CONFIG_PATH or path.parent.name == ".memisalluneed":
+        return path.parent / "session.json"
+    return path.parent / ".memisalluneed" / "session.json"
+
+
+def _model_from_config(config: AppConfig, role) -> ChatModel:
+    from memisalluneed.models.openai_compatible import OpenAICompatibleChatModel
+
+    return OpenAICompatibleChatModel(
+        provider=config.providers[role.provider],
+        model=role.model,
+        timeout=config.http.request_timeout,
+    )
+
+
+def _run_interactive_chat(args, store: MemoryStore) -> int:
+    config = load_config(
+        args.config,
+        overrides=_config_overrides_from_args(args),
+    )
+    session_path = _session_path_for_config(args.config)
+
+    if args.clear_session:
+        SessionState.new().clear_file(session_path)
+        return 0
+
+    if args.new_session:
+        SessionState.new().clear_file(session_path)
+
+    chat_model = _model_from_config(config, config.chat_model)
+    formation_model = _model_from_config(config, config.formation_model)
+    resume = not args.no_resume
+
+    while True:
+        try:
+            user_message = input("> ")
+        except EOFError:
+            flush_session_on_exit(session_path, formation_model, store)
+            return 0
+
+        if user_message in {"/exit", "/quit"}:
+            flush_session_on_exit(session_path, formation_model, store)
+            return 0
+
+        if not user_message.strip():
+            continue
+
+        reply = run_chat_once(
+            user_message=user_message,
+            config=config,
+            store=store,
+            session_path=session_path,
+            chat_model=chat_model,
+            formation_model=formation_model,
+            resume=resume,
+        )
+        resume = True
+        print(reply)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -253,6 +345,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 print(export_jsonl_text(store), end="")
             return 0
+
+        if args.command == "chat":
+            return _run_interactive_chat(args, store)
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1

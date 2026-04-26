@@ -1,4 +1,5 @@
 from memisalluneed.cli import build_parser
+from memisalluneed.cli import main
 from memisalluneed.cli import run_chat_once
 from memisalluneed.config import AppConfig, HttpConfig, ModelRoleConfig, ProviderConfig
 from memisalluneed.config import SessionConfig
@@ -94,3 +95,41 @@ def test_run_chat_once_recalls_memory_and_rolls(tmp_path):
     assert "Phase 2 uses memory during chat." in chat_model.messages[-2]["content"]
     assert formation_model.calls == 1
     assert any(item.content == "Rolled chat became memory." for item in store.all())
+
+
+def test_clear_session_deletes_active_session(tmp_path):
+    db_path = tmp_path / "memory.db"
+    config_path = tmp_path / "config.toml"
+    session_dir = tmp_path / ".memisalluneed"
+    session_dir.mkdir()
+    session_path = session_dir / "session.json"
+    session_path.write_text(
+        '{"session_id":"s","created_at":"t","updated_at":"t","turns":[]}',
+        encoding="utf-8",
+    )
+    config_path.write_text(
+        """
+[chat_model]
+provider = "openai"
+model = "chat"
+[formation_model]
+provider = "openai"
+model = "formation"
+[session]
+max_turns = 6
+max_tokens = 100000
+recall_top_k = 5
+[http]
+request_timeout = 60
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://example.test/v1"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert (
+        main(["chat", "--config", str(config_path), "--db", str(db_path), "--clear-session"])
+        == 0
+    )
+    assert not session_path.exists()
