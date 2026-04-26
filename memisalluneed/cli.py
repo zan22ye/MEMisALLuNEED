@@ -5,11 +5,16 @@ import json
 import sys
 from pathlib import Path
 from typing import Sequence
+from uuid import uuid4
 
-from memisalluneed.config import DEFAULT_CONFIG_PATH
+from memisalluneed.config import AppConfig, DEFAULT_CONFIG_PATH
 from memisalluneed.export import export_jsonl, export_jsonl_text
+from memisalluneed.formation import FormationService
+from memisalluneed.models.base import ChatMessage, ChatModel
 from memisalluneed.schema import create_memory_item
+from memisalluneed.schema import utc_now
 from memisalluneed.search import search_memories
+from memisalluneed.session import SessionState, SessionTurn
 from memisalluneed.store import DEFAULT_DB_PATH, MemoryStore
 
 
@@ -105,6 +110,87 @@ def _print_item(item) -> None:
     print(f"last_recalled_at: {item.last_recalled_at}")
     print(f"metadata: {json.dumps(dict(item.metadata), ensure_ascii=False, sort_keys=True)}")
     print(f"content: {item.content}")
+
+
+def build_chat_messages(
+    active_turns: list[SessionTurn],
+    recalled_results,
+    user_message: str,
+) -> list[ChatMessage]:
+    messages: list[ChatMessage] = [
+        {
+            "role": "system",
+            "content": (
+                "You are MEMisALLuNEED, a memory-centric assistant. "
+                "Recalled memories may be useful but are not guaranteed to be complete. "
+                "Answer the user directly. Do not claim external knowledge unless it "
+                "was provided in the current context."
+            ),
+        }
+    ]
+    for turn in active_turns:
+        messages.append({"role": "user", "content": turn.user_message})
+        messages.append({"role": "assistant", "content": turn.assistant_message})
+
+    recalled_lines = [
+        f"- {result.item.id} ({result.item.type}, {result.item.state}, "
+        f"confidence={result.item.confidence:g}): {result.item.content}"
+        for result in recalled_results
+    ]
+    recalled_content = "Recalled memories:\n" + (
+        "\n".join(recalled_lines) if recalled_lines else "(none)"
+    )
+    messages.append({"role": "system", "content": recalled_content})
+    messages.append({"role": "user", "content": user_message})
+    return messages
+
+
+def run_chat_once(
+    *,
+    user_message: str,
+    config: AppConfig,
+    store: MemoryStore,
+    session_path: str | Path,
+    chat_model: ChatModel,
+    formation_model: ChatModel,
+    resume: bool = True,
+) -> str:
+    session = SessionState.load(session_path) if resume else SessionState.new()
+    recalled_results = search_memories(
+        store,
+        user_message,
+        top_k=config.session.recall_top_k,
+    )
+    assistant_reply = chat_model.complete(
+        build_chat_messages(session.turns, recalled_results, user_message)
+    )
+    turn = SessionTurn(
+        id=str(uuid4()),
+        user_message=user_message,
+        assistant_message=assistant_reply,
+        recalled_memory_ids=[result.item.id for result in recalled_results],
+        created_at=utc_now(),
+    )
+    session.add_turn(turn)
+    session.save(session_path)
+
+    formation = FormationService(model=formation_model, store=store)
+    rolled_turns = session.roll_excess(
+        max_turns=config.session.max_turns,
+        max_tokens=config.session.max_tokens,
+    )
+    for rolled_turn in rolled_turns:
+        recalled_memories = [
+            memory
+            for memory_id in rolled_turn.recalled_memory_ids
+            if (memory := store.get(memory_id)) is not None
+        ]
+        formation.form_from_rolled_turn(
+            rolled_turn,
+            recalled_memories=recalled_memories,
+        )
+    session.save(session_path)
+    return assistant_reply
 
 
 def main(argv: Sequence[str] | None = None) -> int:
