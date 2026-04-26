@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+from memisalluneed.config import DEFAULT_CONFIG_PATH
 from memisalluneed.export import export_jsonl, export_jsonl_text
 from memisalluneed.schema import create_memory_item
 from memisalluneed.search import search_memories
@@ -52,6 +53,24 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export", help="Export memory items as JSONL.")
     export_parser.add_argument("--output")
     _add_db_argument(export_parser)
+
+    chat_parser = subparsers.add_parser("chat", help="Start a memory-centric chat.")
+    chat_parser.add_argument(
+        "--config",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to the local runtime config.",
+    )
+    _add_db_argument(chat_parser)
+    chat_parser.add_argument("--chat-provider")
+    chat_parser.add_argument("--chat-model")
+    chat_parser.add_argument("--formation-provider")
+    chat_parser.add_argument("--formation-model")
+    chat_parser.add_argument("--max-turns", type=int)
+    chat_parser.add_argument("--max-tokens", type=int)
+    chat_parser.add_argument("--recall-top-k", type=int)
+    chat_parser.add_argument("--new-session", action="store_true")
+    chat_parser.add_argument("--clear-session", action="store_true")
+    chat_parser.add_argument("--no-resume", action="store_true")
 
     return parser
 
