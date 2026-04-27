@@ -199,17 +199,19 @@ The memory formation process should:
 
 ### Goal
 
-Make query answering depend on recalled memory.
+Make question answering inside `mem chat` depend more explicitly on recalled
+memory.
 
 ### Features
 
-- `mem ask <query>`: ask a question through the memory system.
-- Recall relevant memory items for the query.
-- Generate an answer using recalled memory.
-- Record which memories were used.
-- Write new experience memory after answering.
-- Write new recall memory after answering.
-- Update memory usage metadata.
+- Keep `mem chat` as the unified user-facing QA interface.
+- Recall relevant memory items before each chat response.
+- Generate each answer using recalled memory and the bounded active session.
+- Treat recalled memory items as the memories used for the answer in Phase 3.
+- Write new experience memory after each answer.
+- Write new recall memory after each answer.
+- Update memory usage metadata after recall.
+- Do not introduce a separate one-shot QA command.
 
 ### Metadata Updates
 
@@ -232,12 +234,28 @@ The system should update:
 - Each answer creates new reusable memory.
 - Recall traces can be inspected.
 - Memory usage metadata changes over time.
+- QA behavior remains unified under `mem chat`.
 
 ## Phase 4: External Knowledge Acquisition
 
 ### Goal
 
 Acquire external knowledge only when existing memory is insufficient.
+
+External acquisition is not a single search step. When recalled memory is not
+sufficient, the system should enter a model-driven acquisition loop:
+
+```text
+search -> judge -> search -> judge -> ...
+```
+
+The loop terminates only when the judge model determines that either:
+
+- enough information has been acquired to answer the query; or
+- enough information cannot be acquired with the available tools and sources.
+
+The loop should also have a configured maximum number of search rounds so that
+external acquisition cannot run indefinitely.
 
 ### Sufficiency Check
 
@@ -253,10 +271,60 @@ External knowledge should be triggered when:
 ### Features
 
 - Memory sufficiency checker.
-- Search, webpage, or document acquisition interface.
+- Model-driven external search loop.
+- Search model that can call configured acquisition tools.
+- Judge model that evaluates whether acquired information is sufficient.
+- Search, webpage, or document acquisition tools exposed to the search model.
 - Source reference storage.
 - External knowledge processing into knowledge memory.
 - Experience memory recording how external knowledge was used.
+
+### Model Roles
+
+Phase 4 introduces two additional configurable model roles:
+
+- **search model**: decides which acquisition tools to call, how to query them,
+  and what candidate external information to collect;
+- **judge model**: evaluates recalled memory plus acquired external information
+  and decides whether to answer, continue searching, or stop because sufficient
+  information is not obtainable.
+
+Both model names should be configured in the local runtime config. The search
+model and judge model may use the same provider as the chat and formation
+models, or different providers when useful.
+
+The runtime config should also include a maximum search round count for the
+acquisition loop.
+
+### Acquisition Loop
+
+The acquisition loop starts only after memory recall and sufficiency checking
+find that existing memory is not enough.
+
+Each loop iteration should:
+
+1. give the search model the original query, recalled memory, current
+   insufficiency reasons, previous acquired evidence, and available tools;
+2. let the search model call one or more acquisition tools;
+3. store source references and extracted candidate evidence;
+4. ask the judge model whether the accumulated memory and external evidence are
+   sufficient;
+5. continue searching only if the judge model identifies remaining information
+   gaps that may still be fillable.
+
+The loop must stop when the judge model returns one of two terminal decisions:
+
+- `sufficient`: answer with the accumulated memory and external evidence;
+- `not_obtainable`: answer with a clear explanation of what information is
+  missing and why the available tools or sources cannot provide enough support.
+
+The loop must also stop when the configured maximum search round count is
+reached. In that case, the judge model should make a final decision using the
+evidence already collected and record whether the result is sufficient,
+uncertain, or not obtainable.
+
+Non-terminal decisions should include explicit missing information and suggested
+next acquisition directions.
 
 ### Storage Rule
 
@@ -267,12 +335,22 @@ The system stores:
 - source reference;
 - processed knowledge memory;
 - usage context as experience memory;
-- recall or answer traces when useful.
+- recall, acquisition, or answer traces when useful.
+
+Failed or incomplete acquisition attempts should also be written as memory with
+state metadata such as `failed` or `uncertain`. This includes the query, missing
+information, tools attempted, source references, and the judge model's terminal
+reason.
 
 ### Success Criteria
 
 - External knowledge is not always used.
 - External acquisition is explainable through insufficiency reasons.
+- The search-judge loop stops when information is sufficient or not obtainable.
+- Search and judge model names are configurable.
+- Maximum search rounds are configurable and enforced.
+- Search is driven by a model with explicit tool access.
+- Judge decisions are recorded and inspectable.
 - Source references are stored.
 - Acquired knowledge becomes reusable memory.
 

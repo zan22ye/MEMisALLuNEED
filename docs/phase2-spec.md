@@ -29,7 +29,7 @@ Phase 2 should prove:
 
 Phase 2 should not implement:
 
-- `mem ask`;
+- a separate one-shot QA command;
 - external knowledge acquisition;
 - web search;
 - document ingestion;
@@ -397,7 +397,7 @@ Default:
 recall_top_k = 5
 ```
 
-This is not `mem ask`. Phase 2 only uses recall as context inside chat.
+Phase 2 only uses recall as context inside chat.
 
 ## Chat Model Prompt Contract
 

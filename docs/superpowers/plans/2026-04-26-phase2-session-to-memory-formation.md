@@ -27,7 +27,7 @@
 
 不实现：
 
-- `mem ask`
+- separate one-shot QA command
 - web search 或外部知识获取
 - document ingestion
 - embedding、vector DB、SQLite embedding column
