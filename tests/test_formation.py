@@ -142,3 +142,30 @@ def test_form_from_chat_qa_turn_sends_chat_qa_payload(tmp_path):
     assert payload["used_memory_ids"] == [recalled.id]
     assert len(written) == 1
     assert written[0].type == "experience"
+
+
+def test_chat_qa_formation_does_not_write_source_memories(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    model = FakeFormationModel(
+        """
+{"memories":[{"type":"source","content":"External source text should not be stored in Phase 3.","state":"success","confidence":0.9,"metadata":{"source":"chat_session","formation_kind":"chat_qa","session_id":"session-1","turn_id":"turn-1","recalled_memory_ids":[],"used_memory_ids":[]}},{"type":"experience","content":"The QA turn became reusable experience.","state":"success","confidence":0.9,"metadata":{"source":"chat_session","formation_kind":"chat_qa","session_id":"session-1","turn_id":"turn-1","recalled_memory_ids":[],"used_memory_ids":[]}}]}
+""".strip()
+    )
+    service = FormationService(model=model, store=store)
+    turn = SessionTurn(
+        id="turn-1",
+        user_message="question",
+        assistant_message="answer",
+        recalled_memory_ids=[],
+        created_at="2026-05-06T00:00:00+00:00",
+    )
+
+    written = service.form_from_chat_qa_turn(
+        session_id="session-1",
+        turn=turn,
+        recalled_memories=[],
+    )
+
+    assert [memory.type for memory in written] == ["experience"]
+    assert [memory.type for memory in store.all()] == ["experience"]

@@ -12,10 +12,13 @@ from memisalluneed.store import MemoryStore
 FORMATION_SYSTEM_PROMPT = """You are the memory formation model for MEMisALLuNEED.
 Return only a JSON object with a memories array.
 Create cleaned and compressed memories, not raw transcript copies.
-Allowed memory types: knowledge, experience, recall, source.
+Allowed memory types for chat_qa: knowledge, experience, recall.
 Allowed memory states: success, failed, uncertain, contradicted, outdated.
-Each memory metadata object must include source="chat_session" and formation_kind.
-For rolling formation, include metadata.turn_id.
+For each chat_qa turn, emit at least one experience memory.
+Every chat_qa experience memory metadata object must include source="chat_session", formation_kind="chat_qa", session_id, turn_id, recalled_memory_ids, and used_memory_ids.
+If you emit a recall memory for the same turn, include the same trace metadata.
+Do not emit source memories in Phase 3.
+Do not include retrieval scores or recall_scores.
 Do not talk to the user."""
 
 
@@ -153,6 +156,8 @@ class FormationService:
     def _form_and_write(self, payload: dict[str, Any]) -> list[MemoryItem]:
         raw_response = self.model.complete(build_formation_messages(payload))
         memories = parse_memory_candidates(raw_response)
+        if payload.get("formation_kind") == "chat_qa":
+            memories = [memory for memory in memories if memory.type != "source"]
         for memory in memories:
             self.store.add(memory)
         return memories
