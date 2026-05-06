@@ -89,7 +89,7 @@ class FakeFormationModel:
 
     def complete(self, messages):
         self.calls += 1
-        return '{"memories":[{"type":"knowledge","content":"Rolled chat became memory.","state":"success","confidence":0.7,"metadata":{"source":"chat_session","formation_kind":"rolling"}}]}'
+        return '{"memories":[{"type":"experience","content":"Rolled chat became memory.","state":"success","confidence":0.7,"metadata":{"source":"chat_session","formation_kind":"chat_qa","session_id":"session","turn_id":"turn","recalled_memory_ids":[],"used_memory_ids":[]}}]}'
 
 
 def test_run_chat_once_recalls_memory_and_rolls(tmp_path):

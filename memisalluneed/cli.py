@@ -216,8 +216,9 @@ def run_chat_once(
             for memory_id in rolled_turn.recalled_memory_ids
             if (memory := store.get(memory_id)) is not None
         ]
-        formation.form_from_rolled_turn(
-            rolled_turn,
+        formation.form_from_chat_qa_turn(
+            session_id=session.session_id,
+            turn=rolled_turn,
             recalled_memories=recalled_memories,
         )
     session.save(session_path)

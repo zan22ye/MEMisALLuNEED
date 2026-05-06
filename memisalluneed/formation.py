@@ -132,6 +132,20 @@ class FormationService:
         payload = build_rolling_payload(turn, recalled_memories)
         return self._form_and_write(payload)
 
+    def form_from_chat_qa_turn(
+        self,
+        *,
+        session_id: str,
+        turn: SessionTurn,
+        recalled_memories: list[MemoryItem],
+    ) -> list[MemoryItem]:
+        payload = build_chat_qa_payload(
+            session_id=session_id,
+            turn=turn,
+            recalled_memories=recalled_memories,
+        )
+        return self._form_and_write(payload)
+
     def form_from_exit_flush(self, turns: list[SessionTurn]) -> list[MemoryItem]:
         payload = build_exit_flush_payload(turns)
         return self._form_and_write(payload)

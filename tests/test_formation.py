@@ -106,3 +106,39 @@ def test_build_chat_qa_payload_includes_trace_metadata():
         "used_memory_ids": [memory.id],
     }
     assert "score" not in json.dumps(payload)
+
+
+def test_form_from_chat_qa_turn_sends_chat_qa_payload(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    recalled = create_memory_item(
+        "Phase 3 turns preserve recall traces.",
+        memory_type="knowledge",
+    )
+    store.add(recalled)
+    model = FakeFormationModel(
+        f"""
+{{"memories":[{{"type":"experience","content":"The QA turn used recalled memory.","state":"success","confidence":0.8,"metadata":{{"source":"chat_session","formation_kind":"chat_qa","session_id":"session-1","turn_id":"turn-1","recalled_memory_ids":["{recalled.id}"],"used_memory_ids":["{recalled.id}"]}}}}]}}
+""".strip()
+    )
+    service = FormationService(model=model, store=store)
+    turn = SessionTurn(
+        id="turn-1",
+        user_message="What changed in Phase 3?",
+        assistant_message="It preserves QA recall trace metadata.",
+        recalled_memory_ids=[recalled.id],
+        created_at="2026-05-06T00:00:00+00:00",
+    )
+
+    written = service.form_from_chat_qa_turn(
+        session_id="session-1",
+        turn=turn,
+        recalled_memories=[recalled],
+    )
+
+    payload = json.loads(model.messages[1]["content"])
+    assert payload["formation_kind"] == "chat_qa"
+    assert payload["session_id"] == "session-1"
+    assert payload["used_memory_ids"] == [recalled.id]
+    assert len(written) == 1
+    assert written[0].type == "experience"
