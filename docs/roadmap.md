@@ -249,6 +249,10 @@ The system should update:
 
 ## Phase 3.5: Timestamp-Aware Memory Resolution
 
+### Status
+
+Implemented as deterministic timestamp-aware resolution for `mem chat`.
+
 ### Goal
 
 Keep memory append-only while reducing the chance that older relevant memories
