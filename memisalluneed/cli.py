@@ -13,6 +13,7 @@ from memisalluneed.config import load_config
 from memisalluneed.export import export_jsonl, export_jsonl_text
 from memisalluneed.formation import FormationService
 from memisalluneed.models.base import ChatMessage, ChatModel
+from memisalluneed.resolution import ResolvedMemoryContext
 from memisalluneed.schema import create_memory_item
 from memisalluneed.schema import utc_now
 from memisalluneed.search import search_memories
@@ -145,7 +146,7 @@ def format_memory_trace(used_memories) -> str:
 
 def build_chat_messages(
     active_turns: list[SessionTurn],
-    recalled_results,
+    resolved_context: ResolvedMemoryContext,
     user_message: str,
 ) -> list[ChatMessage]:
     messages: list[ChatMessage] = [
@@ -154,6 +155,9 @@ def build_chat_messages(
             "content": (
                 "You are MEMisALLuNEED, a memory-centric assistant. "
                 "Recalled memories may be useful but are not guaranteed to be complete. "
+                "When primary and older relevant memories conflict, prefer primary memories. "
+                "Older relevant memories are still useful context but may be less current. "
+                "Use timestamp-unresolved memories cautiously. "
                 "Answer the user directly. Do not claim external knowledge unless it "
                 "was provided in the current context."
             ),
@@ -163,15 +167,30 @@ def build_chat_messages(
         messages.append({"role": "user", "content": turn.user_message})
         messages.append({"role": "assistant", "content": turn.assistant_message})
 
-    recalled_lines = [
-        f"- {result.item.id} ({result.item.type}, {result.item.state}, "
-        f"confidence={result.item.confidence:g}): {result.item.content}"
-        for result in recalled_results
-    ]
-    recalled_content = "Recalled memories:\n" + (
-        "\n".join(recalled_lines) if recalled_lines else "(none)"
+    def format_result(result) -> str:
+        item = result.item
+        return (
+            f"- {item.id} ({item.type}, {item.state}, "
+            f"confidence={item.confidence:g}, created_at={item.created_at}): "
+            f"{item.content}"
+        )
+
+    sections = ["Resolved memory context:"]
+    sections.append("Primary relevant memories:")
+    sections.extend(
+        [format_result(result) for result in resolved_context.primary] or ["- none"]
     )
-    messages.append({"role": "system", "content": recalled_content})
+    sections.append("Older relevant memories:")
+    sections.extend(
+        [format_result(result) for result in resolved_context.older_relevant]
+        or ["- none"]
+    )
+    sections.append("Timestamp-unresolved memories:")
+    sections.extend(
+        [format_result(result) for result in resolved_context.unresolved_time]
+        or ["- none"]
+    )
+    messages.append({"role": "system", "content": "\n".join(sections)})
     messages.append({"role": "user", "content": user_message})
     return messages
 

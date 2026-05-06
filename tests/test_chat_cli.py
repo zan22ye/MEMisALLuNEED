@@ -1,4 +1,7 @@
+from dataclasses import replace
+
 from memisalluneed.cli import ChatRunResult
+from memisalluneed.cli import build_chat_messages
 from memisalluneed.cli import build_parser
 from memisalluneed.cli import format_memory_trace
 from memisalluneed.cli import flush_session_on_exit
@@ -6,7 +9,9 @@ from memisalluneed.cli import main
 from memisalluneed.cli import run_chat_once
 from memisalluneed.config import AppConfig, HttpConfig, ModelRoleConfig, ProviderConfig
 from memisalluneed.config import SessionConfig
+from memisalluneed.resolution import ResolvedMemoryContext
 from memisalluneed.schema import create_memory_item
+from memisalluneed.search import MemorySearchResult
 from memisalluneed.session import SessionState, SessionTurn
 from memisalluneed.store import MemoryStore
 
@@ -83,6 +88,43 @@ def test_format_memory_trace_lists_used_memories():
 
 def test_format_memory_trace_handles_no_memories():
     assert format_memory_trace([]) == "Used memories:\n- none"
+
+
+def memory_result(content: str, created_at: str, score: float = 1.0) -> MemorySearchResult:
+    item = create_memory_item(content)
+    item = replace(item, created_at=created_at, updated_at=created_at)
+    return MemorySearchResult(item=item, score=score)
+
+
+def test_build_chat_messages_includes_resolved_memory_sections():
+    primary = memory_result(
+        "User now follows a vegan diet.",
+        "2026-05-01T00:00:00+00:00",
+    )
+    older = memory_result(
+        "User liked vegetarian restaurants.",
+        "2026-01-01T00:00:00+00:00",
+    )
+    unresolved = memory_result("User dislikes loud venues.", "not-a-date")
+
+    messages = build_chat_messages(
+        active_turns=[],
+        resolved_context=ResolvedMemoryContext(
+            primary=[primary],
+            older_relevant=[older],
+            unresolved_time=[unresolved],
+        ),
+        user_message="What restaurant should I recommend?",
+    )
+
+    memory_section = messages[-2]["content"]
+    assert "Primary relevant memories:" in memory_section
+    assert "Older relevant memories:" in memory_section
+    assert "Timestamp-unresolved memories:" in memory_section
+    assert "User now follows a vegan diet." in memory_section
+    assert "User liked vegetarian restaurants." in memory_section
+    assert "User dislikes loud venues." in memory_section
+    assert "score=" not in memory_section
 
 
 class FakeChatModel:
