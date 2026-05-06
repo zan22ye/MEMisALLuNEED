@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 from memisalluneed.schema import create_memory_item
 from memisalluneed.search import MemorySearchResult, search_memories, score_memory
 from memisalluneed.store import MemoryStore
@@ -51,3 +53,33 @@ def test_search_returns_no_results_for_empty_query(tmp_path):
     results = search_memories(store, "   ", top_k=1)
 
     assert results == []
+
+
+def test_mem_search_ranking_remains_relevance_first(tmp_path):
+    db_path = tmp_path / "memory.db"
+    store = MemoryStore(db_path)
+    store.init()
+    newer_low_relevance = create_memory_item("external")
+    newer_low_relevance = replace(
+        newer_low_relevance,
+        created_at="2026-05-01T00:00:00+00:00",
+        updated_at="2026-05-01T00:00:00+00:00",
+    )
+    older_high_relevance = create_memory_item(
+        "external knowledge memory insufficient"
+    )
+    older_high_relevance = replace(
+        older_high_relevance,
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    store.add(newer_low_relevance)
+    store.add(older_high_relevance)
+
+    results = search_memories(
+        store,
+        "external knowledge memory insufficient",
+        top_k=2,
+    )
+
+    assert results[0].item.id == older_high_relevance.id
