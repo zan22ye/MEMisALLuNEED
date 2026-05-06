@@ -125,7 +125,12 @@ def test_run_chat_once_recalls_memory_and_rolls(tmp_path):
     config = AppConfig(
         chat_model=ModelRoleConfig(provider="openai", model="chat"),
         formation_model=ModelRoleConfig(provider="openai", model="formation"),
-        session=SessionConfig(max_turns=0, max_tokens=100000, recall_top_k=1),
+        session=SessionConfig(
+            max_turns=0,
+            max_tokens=100000,
+            recall_top_k=1,
+            recall_candidate_k=1,
+        ),
         http=HttpConfig(request_timeout=60),
         providers={
             "openai": ProviderConfig(

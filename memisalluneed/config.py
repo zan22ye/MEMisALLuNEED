@@ -19,6 +19,7 @@ class SessionConfig:
     max_turns: int
     max_tokens: int
     recall_top_k: int
+    recall_candidate_k: int
 
 
 @dataclass(frozen=True)
@@ -50,6 +51,7 @@ class ConfigOverrides:
     max_turns: int | None = None
     max_tokens: int | None = None
     recall_top_k: int | None = None
+    recall_candidate_k: int | None = None
 
 
 def load_config(
@@ -84,11 +86,20 @@ def load_config(
         recall_top_k=overrides.recall_top_k
         if overrides.recall_top_k is not None
         else session.recall_top_k,
+        recall_candidate_k=overrides.recall_candidate_k
+        if overrides.recall_candidate_k is not None
+        else session.recall_candidate_k,
     )
 
     _validate_positive_int("session.max_turns", session.max_turns)
     _validate_positive_int("session.max_tokens", session.max_tokens)
     _validate_positive_int("session.recall_top_k", session.recall_top_k)
+    _validate_positive_int("session.recall_candidate_k", session.recall_candidate_k)
+    if session.recall_candidate_k < session.recall_top_k:
+        raise ValueError(
+            "session.recall_candidate_k must be greater than or equal to "
+            "session.recall_top_k"
+        )
     _require_provider(providers, chat_model.provider)
     _require_provider(providers, formation_model.provider)
 
@@ -113,13 +124,21 @@ def _load_session(data: dict[str, Any]) -> SessionConfig:
     max_turns = _required_int(raw, "max_turns", "session")
     max_tokens = _required_int(raw, "max_tokens", "session")
     recall_top_k = _required_int(raw, "recall_top_k", "session")
+    recall_candidate_k = _required_int(raw, "recall_candidate_k", "session")
     _validate_positive_int("session.max_turns", max_turns)
     _validate_positive_int("session.max_tokens", max_tokens)
     _validate_positive_int("session.recall_top_k", recall_top_k)
+    _validate_positive_int("session.recall_candidate_k", recall_candidate_k)
+    if recall_candidate_k < recall_top_k:
+        raise ValueError(
+            "session.recall_candidate_k must be greater than or equal to "
+            "session.recall_top_k"
+        )
     return SessionConfig(
         max_turns=max_turns,
         max_tokens=max_tokens,
         recall_top_k=recall_top_k,
+        recall_candidate_k=recall_candidate_k,
     )
 
 

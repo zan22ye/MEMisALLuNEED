@@ -16,6 +16,7 @@ def test_load_example_config():
     assert config.session.max_turns == 6
     assert config.session.max_tokens == 100000
     assert config.session.recall_top_k == 5
+    assert config.session.recall_candidate_k == 50
     assert config.http.request_timeout == 60
     assert config.providers["kimi"].base_url == "https://api.moonshot.cn/v1"
     assert config.providers["qwen"].api_key_env == "QWEN_API_KEY"
@@ -37,6 +38,7 @@ model = "gpt-4.1-mini"
 max_turns = 6
 max_tokens = 100000
 recall_top_k = 5
+recall_candidate_k = 50
 
 [http]
 request_timeout = 60
@@ -62,6 +64,7 @@ base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
             max_turns=4,
             max_tokens=1200,
             recall_top_k=3,
+            recall_candidate_k=9,
         ),
     )
 
@@ -71,6 +74,36 @@ base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     assert config.session.max_turns == 4
     assert config.session.max_tokens == 1200
     assert config.session.recall_top_k == 3
+    assert config.session.recall_candidate_k == 9
+
+
+def test_load_config_reads_recall_candidate_k(tmp_path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[chat_model]
+provider = "openai"
+model = "chat"
+[formation_model]
+provider = "openai"
+model = "formation"
+[session]
+max_turns = 6
+max_tokens = 100000
+recall_top_k = 5
+recall_candidate_k = 50
+[http]
+request_timeout = 60
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://example.test/v1"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.session.recall_candidate_k == 50
 
 
 def test_missing_provider_config_is_rejected(tmp_path):
@@ -89,6 +122,7 @@ model = "model"
 max_turns = 6
 max_tokens = 100000
 recall_top_k = 5
+recall_candidate_k = 50
 
 [http]
 request_timeout = 60
