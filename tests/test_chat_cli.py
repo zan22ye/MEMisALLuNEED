@@ -1,3 +1,4 @@
+from memisalluneed.cli import ChatRunResult
 from memisalluneed.cli import build_parser
 from memisalluneed.cli import format_memory_trace
 from memisalluneed.cli import main
@@ -111,7 +112,7 @@ def test_run_chat_once_recalls_memory_and_rolls(tmp_path):
         },
     )
 
-    reply = run_chat_once(
+    result = run_chat_once(
         user_message="How does Phase 2 use memory?",
         config=config,
         store=store,
@@ -121,7 +122,10 @@ def test_run_chat_once_recalls_memory_and_rolls(tmp_path):
         resume=False,
     )
 
-    assert reply == "assistant reply using memory"
+    assert isinstance(result, ChatRunResult)
+    assert result.assistant_reply == "assistant reply using memory"
+    assert len(result.used_memories) == 1
+    assert result.used_memories[0].content == "Phase 2 uses memory during chat."
     assert "Phase 2 uses memory during chat." in chat_model.messages[-2]["content"]
     assert formation_model.calls == 1
     assert any(item.content == "Rolled chat became memory." for item in store.all())

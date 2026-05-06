@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Sequence
 from uuid import uuid4
@@ -118,6 +119,12 @@ def _print_item(item) -> None:
     print(f"content: {item.content}")
 
 
+@dataclass(frozen=True)
+class ChatRunResult:
+    assistant_reply: str
+    used_memories: list
+
+
 def format_memory_trace(used_memories) -> str:
     if not used_memories:
         return "Used memories:\n- none"
@@ -177,13 +184,14 @@ def run_chat_once(
     chat_model: ChatModel,
     formation_model: ChatModel,
     resume: bool = True,
-) -> str:
+) -> ChatRunResult:
     session = SessionState.load(session_path) if resume else SessionState.new()
     recalled_results = search_memories(
         store,
         user_message,
         top_k=config.session.recall_top_k,
     )
+    used_memories = [result.item for result in recalled_results]
     assistant_reply = chat_model.complete(
         build_chat_messages(session.turns, recalled_results, user_message)
     )
@@ -213,7 +221,10 @@ def run_chat_once(
             recalled_memories=recalled_memories,
         )
     session.save(session_path)
-    return assistant_reply
+    return ChatRunResult(
+        assistant_reply=assistant_reply,
+        used_memories=used_memories,
+    )
 
 
 def flush_session_on_exit(
@@ -294,7 +305,7 @@ def _run_interactive_chat(args, store: MemoryStore) -> int:
         if not user_message.strip():
             continue
 
-        reply = run_chat_once(
+        result = run_chat_once(
             user_message=user_message,
             config=config,
             store=store,
@@ -304,7 +315,9 @@ def _run_interactive_chat(args, store: MemoryStore) -> int:
             resume=resume,
         )
         resume = True
-        print(reply)
+        print(result.assistant_reply)
+        if args.show_memory_trace:
+            print(format_memory_trace(result.used_memories))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
