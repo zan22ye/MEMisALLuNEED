@@ -236,6 +236,105 @@ The system should update:
 - Memory usage metadata changes over time.
 - QA behavior remains unified under `mem chat`.
 
+## Phase 3.5: Timestamp-Aware Memory Resolution
+
+### Goal
+
+Keep memory append-only while reducing the chance that older relevant memories
+dominate the final QA context.
+
+This phase introduces a resolver layer after relevance recall and before chat
+prompt construction. The resolver uses `created_at` only within already
+relevant candidates. It does not delete, overwrite, or mutate old memories.
+
+### Core Rule
+
+The system should not delete memories to resolve conflict.
+
+When multiple relevant memories are available, newer memories should be
+preferred as primary QA context. Older relevant memories remain available as
+background context and trace evidence.
+
+### Recall Flow
+
+Phase 3.5 uses broad relevance recall followed by deterministic time-aware
+resolution:
+
+```text
+query
+  -> relevance recall with candidate_k
+  -> timestamp-aware resolver
+  -> final context with final_k or token budget
+```
+
+The candidate pool should be larger than the final context:
+
+```text
+candidate_k > final_k
+```
+
+This helps newer relevant memories enter the resolver even when they would not
+fit in the old final top-k.
+
+### Candidate Selection Constraint
+
+Phase 3.5 should not add recent-only retrieval.
+
+Candidate memories must come from relevance recall. Recency is used only after
+the relevance candidate pool has already been selected.
+
+This means the resolver does not solve cases where a newer memory is not
+retrieved by relevance search at all. That limitation belongs to the search
+layer and can be addressed later through semantic recall, subject indexes, or
+memory graph relations.
+
+### Resolver Output
+
+The resolver should classify the relevance candidates for the current query
+into temporary context roles:
+
+- `primary`: newest valid-time relevant memories that should be prioritized in
+  the final answer context;
+- `older_relevant`: valid-time relevant memories that are older than the
+  primary set and should be treated as background or trace context;
+- `unresolved_time`: relevant memories whose `created_at` timestamp is missing
+  or cannot be parsed.
+
+These roles are not permanent memory states. The same memory can be `primary`
+for one query and `older_relevant` for another query.
+
+### Features
+
+- Add a timestamp-aware resolver layer.
+- Use `created_at` after relevance recall to order valid-time candidates.
+- Keep old memories inspectable instead of deleting them.
+- Distinguish primary, older relevant, and timestamp-unresolved memories in
+  chat prompt context.
+- Keep `mem search` behavior unchanged in this phase.
+- Prefer explicit configuration for `recall_candidate_k`.
+
+### Out of Scope
+
+- Recent-only candidate retrieval.
+- External search.
+- Semantic embeddings.
+- Vector database integration.
+- Memory graph reasoning.
+- Automatic contradiction detection.
+- Automatic mutation of old memory state.
+- Deletion or overwrite of old memories.
+
+### Success Criteria
+
+- Newer valid-time relevant candidates are prioritized as primary context.
+- Older valid-time relevant candidates remain available as older relevant
+  context.
+- Timestamp-invalid relevant candidates are separated as unresolved-time
+  context.
+- Chat prompt construction can distinguish these context roles.
+- The resolver does not mutate or delete stored memories.
+- `mem search` remains unchanged.
+
 ## Phase 4: External Knowledge Acquisition
 
 ### Goal
