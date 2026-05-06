@@ -350,95 +350,98 @@ for one query and `older_relevant` for another query.
 - The resolver does not mutate or delete stored memories.
 - `mem search` remains unchanged.
 
-## Phase 4: External Knowledge Acquisition
+## Phase 4: Host-Supplied Knowledge Integration
 
 ### Goal
 
-Acquire external knowledge only when existing memory is insufficient.
+Integrate external knowledge that is supplied by the host application.
 
-External acquisition is not a single search step. When recalled memory is not
-sufficient, the system should enter a model-driven acquisition loop:
+MEMisALLuNEED is a memory plugin, not a full external-search agent. It should
+not decide whether outside knowledge is needed, search the web, call external
+tools, or judge whether acquired information is sufficient.
+
+The host application owns those decisions. MEMisALLuNEED receives what the host
+already decided to provide and turns it into structured, reusable memory.
+
+### Plugin Boundary
+
+MEMisALLuNEED should not implement:
+
+- memory sufficiency checking;
+- insufficiency reasons;
+- deciding whether external knowledge is needed;
+- external search;
+- search model roles;
+- judge model roles;
+- search-judge loops;
+- web browsing;
+- document crawling;
+- external tool calling.
+
+The host application is responsible for:
+
+- deciding whether memory is enough;
+- deciding whether outside knowledge is needed;
+- acquiring external evidence;
+- selecting tools and sources;
+- judging whether evidence is sufficient for its answer.
+
+MEMisALLuNEED is responsible for remembering what the host supplies.
+
+### Integration Flow
+
+The intended flow is:
 
 ```text
-search -> judge -> search -> judge -> ...
+host application
+  -> decides external knowledge is needed
+  -> acquires evidence or source references
+  -> provides query, evidence, source refs, answer trace, and metadata
+  -> MEMisALLuNEED forms reusable memory
 ```
-
-The loop terminates only when the judge model determines that either:
-
-- enough information has been acquired to answer the query; or
-- enough information cannot be acquired with the available tools and sources.
-
-The loop should also have a configured maximum number of search rounds so that
-external acquisition cannot run indefinitely.
-
-### Sufficiency Check
-
-External knowledge should be triggered when:
-
-- relevant memory cannot be found;
-- recalled memory has low confidence;
-- recalled memories conflict;
-- the query requires fresh or time-sensitive information;
-- existing memory lacks evidence;
-- existing memory only partially covers the query.
 
 ### Features
 
-- Memory sufficiency checker.
-- Model-driven external search loop.
-- Search model that can call configured acquisition tools.
-- Judge model that evaluates whether acquired information is sufficient.
-- Search, webpage, or document acquisition tools exposed to the search model.
-- Source reference storage.
-- External knowledge processing into knowledge memory.
-- Experience memory recording how external knowledge was used.
+- Host-supplied source reference storage.
+- Host-supplied evidence ingestion.
+- Processed knowledge memory from host-supplied evidence.
+- Experience memory recording how host-supplied evidence was used.
+- Answer trace memory when the host provides answer/evidence relationships.
+- Provenance metadata for source, host, query, answer, and evidence ids.
+- Failed, uncertain, incomplete, or contradicted host-supplied knowledge can be
+  written with state metadata when the host marks it that way.
 
-### Model Roles
+### Possible Interfaces
 
-Phase 4 introduces two additional configurable model roles:
+Phase 4 can expose CLI and/or Python API entry points such as:
 
-- **search model**: decides which acquisition tools to call, how to query them,
-  and what candidate external information to collect;
-- **judge model**: evaluates recalled memory plus acquired external information
-  and decides whether to answer, continue searching, or stop because sufficient
-  information is not obtainable.
+```text
+mem integrate-source
+mem integrate-evidence
+mem integrate-answer
+```
 
-Both model names should be configured in the local runtime config. The search
-model and judge model may use the same provider as the chat and formation
-models, or different providers when useful.
+or library functions such as:
 
-The runtime config should also include a maximum search round count for the
-acquisition loop.
+```python
+integrate_source_reference(...)
+integrate_host_evidence(...)
+integrate_answer_trace(...)
+```
 
-### Acquisition Loop
+### Metadata
 
-The acquisition loop starts only after memory recall and sufficiency checking
-find that existing memory is not enough.
+Host-supplied integration should preserve metadata such as:
 
-Each loop iteration should:
-
-1. give the search model the original query, recalled memory, current
-   insufficiency reasons, previous acquired evidence, and available tools;
-2. let the search model call one or more acquisition tools;
-3. store source references and extracted candidate evidence;
-4. ask the judge model whether the accumulated memory and external evidence are
-   sufficient;
-5. continue searching only if the judge model identifies remaining information
-   gaps that may still be fillable.
-
-The loop must stop when the judge model returns one of two terminal decisions:
-
-- `sufficient`: answer with the accumulated memory and external evidence;
-- `not_obtainable`: answer with a clear explanation of what information is
-  missing and why the available tools or sources cannot provide enough support.
-
-The loop must also stop when the configured maximum search round count is
-reached. In that case, the judge model should make a final decision using the
-evidence already collected and record whether the result is sufficient,
-uncertain, or not obtainable.
-
-Non-terminal decisions should include explicit missing information and suggested
-next acquisition directions.
+- `source = "host_supplied"`;
+- `source_uri`;
+- `source_title`;
+- `retrieved_at`;
+- `host_agent`;
+- `query`;
+- `answer_id`;
+- `evidence_ids`;
+- `formation_kind`.
 
 ### Storage Rule
 
@@ -446,27 +449,28 @@ External sources should not be stored as full raw text by default.
 
 The system stores:
 
-- source reference;
+- source reference memory;
 - processed knowledge memory;
 - usage context as experience memory;
-- recall, acquisition, or answer traces when useful.
+- answer, evidence, and provenance traces when useful.
 
-Failed or incomplete acquisition attempts should also be written as memory with
-state metadata such as `failed` or `uncertain`. This includes the query, missing
-information, tools attempted, source references, and the judge model's terminal
-reason.
+The host may provide failed, uncertain, incomplete, contradicted, or outdated
+evidence. MEMisALLuNEED should preserve those states when forming memory, but
+it should not independently decide that evidence is sufficient or insufficient.
 
 ### Success Criteria
 
-- External knowledge is not always used.
-- External acquisition is explainable through insufficiency reasons.
-- The search-judge loop stops when information is sufficient or not obtainable.
-- Search and judge model names are configurable.
-- Maximum search rounds are configurable and enforced.
-- Search is driven by a model with explicit tool access.
-- Judge decisions are recorded and inspectable.
-- Source references are stored.
-- Acquired knowledge becomes reusable memory.
+- The plugin can accept host-supplied source references.
+- The plugin can accept host-supplied evidence.
+- The plugin can form source reference, knowledge, and experience memories from
+  host-supplied inputs.
+- Provenance metadata is preserved.
+- External source full text is not stored by default.
+- The plugin does not perform external search.
+- The plugin does not implement sufficiency checks or insufficiency reasons.
+- The plugin does not implement search or judge model roles.
+- The plugin does not implement a search-judge acquisition loop.
+
 
 ## Phase 5: Memory Graph and Evaluation
 
