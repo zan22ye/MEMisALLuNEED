@@ -118,6 +118,23 @@ def _print_item(item) -> None:
     print(f"content: {item.content}")
 
 
+def format_memory_trace(used_memories) -> str:
+    if not used_memories:
+        return "Used memories:\n- none"
+
+    lines = [
+        "Used memories:",
+        *[
+            (
+                f"- {memory.id} {memory.type} {memory.state} "
+                f"confidence={memory.confidence:g}"
+            )
+            for memory in used_memories
+        ],
+    ]
+    return "\n".join(lines)
+
+
 def build_chat_messages(
     active_turns: list[SessionTurn],
     recalled_results,

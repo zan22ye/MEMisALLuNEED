@@ -1,4 +1,5 @@
 from memisalluneed.cli import build_parser
+from memisalluneed.cli import format_memory_trace
 from memisalluneed.cli import main
 from memisalluneed.cli import run_chat_once
 from memisalluneed.config import AppConfig, HttpConfig, ModelRoleConfig, ProviderConfig
@@ -50,6 +51,26 @@ def test_chat_parser_accepts_show_memory_trace():
 
     assert args.command == "chat"
     assert args.show_memory_trace is True
+
+
+def test_format_memory_trace_lists_used_memories():
+    item = create_memory_item(
+        "Phase 3 uses recalled memory.",
+        memory_type="knowledge",
+        state="success",
+        confidence=0.75,
+    )
+
+    trace = format_memory_trace([item])
+
+    assert trace == (
+        "Used memories:\n"
+        f"- {item.id} knowledge success confidence=0.75"
+    )
+
+
+def test_format_memory_trace_handles_no_memories():
+    assert format_memory_trace([]) == "Used memories:\n- none"
 
 
 class FakeChatModel:
