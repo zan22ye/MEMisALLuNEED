@@ -43,6 +43,15 @@ def test_chat_parser_accepts_phase2_options():
     assert args.new_session is True
 
 
+def test_chat_parser_accepts_show_memory_trace():
+    parser = build_parser()
+
+    args = parser.parse_args(["chat", "--show-memory-trace"])
+
+    assert args.command == "chat"
+    assert args.show_memory_trace is True
+
+
 class FakeChatModel:
     def __init__(self):
         self.messages = None

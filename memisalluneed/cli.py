@@ -77,6 +77,11 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument("--new-session", action="store_true")
     chat_parser.add_argument("--clear-session", action="store_true")
     chat_parser.add_argument("--no-resume", action="store_true")
+    chat_parser.add_argument(
+        "--show-memory-trace",
+        action="store_true",
+        help="Print the memories used after each assistant reply.",
+    )
 
     return parser
 
