@@ -40,12 +40,12 @@ def test_invalid_candidates_are_skipped():
     assert result[0].content == "Valid memory."
 
 
-def test_rolling_formation_writes_valid_memory(tmp_path):
+def test_chat_qa_formation_writes_valid_memory(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     store.init()
     model = FakeFormationModel(
         """
-{"memories":[{"type":"experience","content":"User asked about Phase 2 planning.","state":"success","confidence":0.8,"metadata":{"source":"chat_session","formation_kind":"rolling","turn_id":"turn-1"}}]}
+{"memories":[{"type":"experience","content":"User asked about Phase 3 planning.","state":"success","confidence":0.8,"metadata":{"source":"chat_session","formation_kind":"chat_qa","session_id":"session-1","turn_id":"turn-1","recalled_memory_ids":[],"used_memory_ids":[]}}]}
 """.strip()
     )
     service = FormationService(model=model, store=store)
@@ -57,10 +57,14 @@ def test_rolling_formation_writes_valid_memory(tmp_path):
         created_at="2026-04-26T00:00:00+00:00",
     )
 
-    written = service.form_from_rolled_turn(turn, recalled_memories=[])
+    written = service.form_from_chat_qa_turn(
+        session_id="session-1",
+        turn=turn,
+        recalled_memories=[],
+    )
 
     assert len(written) == 1
-    assert store.all()[0].content == "User asked about Phase 2 planning."
+    assert store.all()[0].content == "User asked about Phase 3 planning."
     assert model.messages[0]["role"] == "system"
 
 

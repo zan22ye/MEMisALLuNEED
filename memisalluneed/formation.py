@@ -58,24 +58,6 @@ def parse_memory_candidates(raw_json: str) -> list[MemoryItem]:
     return memories
 
 
-def build_rolling_payload(
-    turn: SessionTurn,
-    recalled_memories: list[MemoryItem],
-) -> dict[str, Any]:
-    return {
-        "formation_kind": "rolling",
-        "turn": turn.to_dict(),
-        "recalled_memories": [
-            {
-                "id": memory.id,
-                "type": memory.type,
-                "content": memory.content,
-            }
-            for memory in recalled_memories
-        ],
-    }
-
-
 def build_chat_qa_payload(
     *,
     session_id: str,
@@ -105,13 +87,6 @@ def build_chat_qa_payload(
     }
 
 
-def build_exit_flush_payload(turns: list[SessionTurn]) -> dict[str, Any]:
-    return {
-        "formation_kind": "exit_flush",
-        "turns": [turn.to_dict() for turn in turns],
-    }
-
-
 def build_formation_messages(payload: dict[str, Any]) -> list[ChatMessage]:
     return [
         {"role": "system", "content": FORMATION_SYSTEM_PROMPT},
@@ -127,14 +102,6 @@ class FormationService:
     model: ChatModel
     store: MemoryStore
 
-    def form_from_rolled_turn(
-        self,
-        turn: SessionTurn,
-        recalled_memories: list[MemoryItem],
-    ) -> list[MemoryItem]:
-        payload = build_rolling_payload(turn, recalled_memories)
-        return self._form_and_write(payload)
-
     def form_from_chat_qa_turn(
         self,
         *,
@@ -147,10 +114,6 @@ class FormationService:
             turn=turn,
             recalled_memories=recalled_memories,
         )
-        return self._form_and_write(payload)
-
-    def form_from_exit_flush(self, turns: list[SessionTurn]) -> list[MemoryItem]:
-        payload = build_exit_flush_payload(turns)
         return self._form_and_write(payload)
 
     def _form_and_write(self, payload: dict[str, Any]) -> list[MemoryItem]:
