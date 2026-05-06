@@ -1,4 +1,8 @@
-from memisalluneed.formation import FormationService, parse_memory_candidates
+import json
+
+from memisalluneed.formation import FormationService, build_chat_qa_payload
+from memisalluneed.formation import parse_memory_candidates
+from memisalluneed.schema import create_memory_item
 from memisalluneed.session import SessionTurn
 from memisalluneed.store import MemoryStore
 
@@ -58,3 +62,47 @@ def test_rolling_formation_writes_valid_memory(tmp_path):
     assert len(written) == 1
     assert store.all()[0].content == "User asked about Phase 2 planning."
     assert model.messages[0]["role"] == "system"
+
+
+def test_build_chat_qa_payload_includes_trace_metadata():
+    memory = create_memory_item(
+        "The project uses bounded active session context.",
+        memory_type="knowledge",
+        state="success",
+        confidence=0.8,
+    )
+    turn = SessionTurn(
+        id="turn-1",
+        user_message="How should chat answer?",
+        assistant_message="Use bounded context plus recalled memory.",
+        recalled_memory_ids=[memory.id],
+        created_at="2026-05-06T00:00:00+00:00",
+    )
+
+    payload = build_chat_qa_payload(
+        session_id="session-1",
+        turn=turn,
+        recalled_memories=[memory],
+    )
+
+    assert payload == {
+        "formation_kind": "chat_qa",
+        "session_id": "session-1",
+        "turn": {
+            "id": "turn-1",
+            "user_message": "How should chat answer?",
+            "assistant_message": "Use bounded context plus recalled memory.",
+            "created_at": "2026-05-06T00:00:00+00:00",
+        },
+        "recalled_memories": [
+            {
+                "id": memory.id,
+                "type": "knowledge",
+                "state": "success",
+                "confidence": 0.8,
+                "content": "The project uses bounded active session context.",
+            }
+        ],
+        "used_memory_ids": [memory.id],
+    }
+    assert "score" not in json.dumps(payload)

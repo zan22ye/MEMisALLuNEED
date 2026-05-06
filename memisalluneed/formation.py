@@ -73,6 +73,35 @@ def build_rolling_payload(
     }
 
 
+def build_chat_qa_payload(
+    *,
+    session_id: str,
+    turn: SessionTurn,
+    recalled_memories: list[MemoryItem],
+) -> dict[str, Any]:
+    return {
+        "formation_kind": "chat_qa",
+        "session_id": session_id,
+        "turn": {
+            "id": turn.id,
+            "user_message": turn.user_message,
+            "assistant_message": turn.assistant_message,
+            "created_at": turn.created_at,
+        },
+        "recalled_memories": [
+            {
+                "id": memory.id,
+                "type": memory.type,
+                "state": memory.state,
+                "confidence": memory.confidence,
+                "content": memory.content,
+            }
+            for memory in recalled_memories
+        ],
+        "used_memory_ids": [memory.id for memory in recalled_memories],
+    }
+
+
 def build_exit_flush_payload(turns: list[SessionTurn]) -> dict[str, Any]:
     return {
         "formation_kind": "exit_flush",
