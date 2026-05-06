@@ -187,6 +187,24 @@ def test_flush_session_on_exit_forms_each_turn_individually(tmp_path):
     assert not session_path.exists()
 
 
+def test_show_memory_trace_prints_used_memories(capsys):
+    item = create_memory_item(
+        "Phase 3 trace memory.",
+        memory_type="knowledge",
+        state="success",
+        confidence=1.0,
+    )
+
+    print("assistant reply")
+    print(format_memory_trace([item]))
+
+    output = capsys.readouterr().out
+    assert "assistant reply" in output
+    assert "Used memories:" in output
+    assert f"- {item.id} knowledge success confidence=1" in output
+    assert "score=" not in output
+
+
 def test_clear_session_deletes_active_session(tmp_path):
     db_path = tmp_path / "memory.db"
     config_path = tmp_path / "config.toml"
