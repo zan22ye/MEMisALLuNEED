@@ -210,6 +210,65 @@ def test_run_chat_once_recalls_memory_and_rolls(tmp_path):
     assert any(item.content == "Rolled chat became memory." for item in store.all())
 
 
+def test_run_chat_once_uses_candidate_k_and_resolved_primary_context(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    old = create_memory_item("User liked vegetarian restaurants.")
+    old = replace(
+        old,
+        created_at="2026-01-01T00:00:00+00:00",
+        updated_at="2026-01-01T00:00:00+00:00",
+    )
+    new = create_memory_item("User now follows a vegan diet.")
+    new = replace(
+        new,
+        created_at="2026-05-01T00:00:00+00:00",
+        updated_at="2026-05-01T00:00:00+00:00",
+    )
+    store.add(old)
+    store.add(new)
+    session_path = tmp_path / "session.json"
+    chat_model = FakeChatModel()
+    formation_model = FakeFormationModel()
+    config = AppConfig(
+        chat_model=ModelRoleConfig(provider="openai", model="chat"),
+        formation_model=ModelRoleConfig(provider="openai", model="formation"),
+        session=SessionConfig(
+            max_turns=6,
+            max_tokens=100000,
+            recall_top_k=1,
+            recall_candidate_k=2,
+        ),
+        http=HttpConfig(request_timeout=60),
+        providers={
+            "openai": ProviderConfig(
+                api_key_env="OPENAI_API_KEY",
+                base_url="https://example.test/v1",
+            )
+        },
+    )
+
+    result = run_chat_once(
+        user_message="What restaurants fit the user diet?",
+        config=config,
+        store=store,
+        session_path=session_path,
+        chat_model=chat_model,
+        formation_model=formation_model,
+        resume=False,
+    )
+
+    memory_section = chat_model.messages[-2]["content"]
+    assert "Primary relevant memories:" in memory_section
+    assert "User now follows a vegan diet." in memory_section
+    assert "Older relevant memories:" in memory_section
+    assert "User liked vegetarian restaurants." in memory_section
+    assert [memory.content for memory in result.used_memories] == [
+        "User now follows a vegan diet.",
+        "User liked vegetarian restaurants.",
+    ]
+
+
 def test_flush_session_on_exit_forms_each_turn_individually(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     store.init()
@@ -283,6 +342,7 @@ model = "formation"
 max_turns = 6
 max_tokens = 100000
 recall_top_k = 5
+recall_candidate_k = 50
 [http]
 request_timeout = 60
 [providers.openai]

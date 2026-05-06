@@ -14,6 +14,7 @@ from memisalluneed.export import export_jsonl, export_jsonl_text
 from memisalluneed.formation import FormationService
 from memisalluneed.models.base import ChatMessage, ChatModel
 from memisalluneed.resolution import ResolvedMemoryContext
+from memisalluneed.resolution import resolve_current_memories
 from memisalluneed.schema import create_memory_item
 from memisalluneed.schema import utc_now
 from memisalluneed.search import search_memories
@@ -209,17 +210,26 @@ def run_chat_once(
     recalled_results = search_memories(
         store,
         user_message,
-        top_k=config.session.recall_top_k,
+        top_k=config.session.recall_candidate_k,
     )
-    used_memories = [result.item for result in recalled_results]
+    resolved_context = resolve_current_memories(
+        recalled_results,
+        final_k=config.session.recall_top_k,
+    )
+    prompt_results = (
+        resolved_context.primary
+        + resolved_context.older_relevant
+        + resolved_context.unresolved_time
+    )
+    used_memories = [result.item for result in prompt_results]
     assistant_reply = chat_model.complete(
-        build_chat_messages(session.turns, recalled_results, user_message)
+        build_chat_messages(session.turns, resolved_context, user_message)
     )
     turn = SessionTurn(
         id=str(uuid4()),
         user_message=user_message,
         assistant_message=assistant_reply,
-        recalled_memory_ids=[result.item.id for result in recalled_results],
+        recalled_memory_ids=[memory.id for memory in used_memories],
         created_at=utc_now(),
     )
     session.add_turn(turn)
