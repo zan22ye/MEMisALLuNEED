@@ -75,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument("--max-turns", type=int)
     chat_parser.add_argument("--max-tokens", type=int)
     chat_parser.add_argument("--recall-top-k", type=int)
+    chat_parser.add_argument("--recall-candidate-k", type=int)
     chat_parser.add_argument("--new-session", action="store_true")
     chat_parser.add_argument("--clear-session", action="store_true")
     chat_parser.add_argument("--no-resume", action="store_true")
@@ -266,6 +267,7 @@ def _config_overrides_from_args(args) -> ConfigOverrides:
         max_turns=args.max_turns,
         max_tokens=args.max_tokens,
         recall_top_k=args.recall_top_k,
+        recall_candidate_k=args.recall_candidate_k,
     )
 
 

@@ -56,6 +56,15 @@ def test_chat_parser_accepts_show_memory_trace():
     assert args.show_memory_trace is True
 
 
+def test_chat_parser_accepts_recall_candidate_k():
+    parser = build_parser()
+
+    args = parser.parse_args(["chat", "--recall-candidate-k", "50"])
+
+    assert args.command == "chat"
+    assert args.recall_candidate_k == 50
+
+
 def test_format_memory_trace_lists_used_memories():
     item = create_memory_item(
         "Phase 3 uses recalled memory.",
