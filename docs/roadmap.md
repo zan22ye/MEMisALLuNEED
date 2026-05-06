@@ -197,6 +197,10 @@ The memory formation process should:
 
 ## Phase 3: Memory-Centric QA Loop
 
+### Status
+
+Implemented as memory-centric QA behavior inside `mem chat`.
+
 ### Goal
 
 Make question answering inside `mem chat` depend more explicitly on recalled
@@ -208,10 +212,16 @@ memory.
 - Recall relevant memory items before each chat response.
 - Generate each answer using recalled memory and the bounded active session.
 - Treat recalled memory items as the memories used for the answer in Phase 3.
-- Write new experience memory after each answer.
-- Write new recall memory after each answer.
+- Optionally display used memory trace with `mem chat --show-memory-trace`.
+- Form rolled and flushed chat turns with `formation_kind = "chat_qa"`.
+- Preserve recall trace metadata through `recalled_memory_ids` and
+  `used_memory_ids`.
+- Process rolling formation and exit flush formation one turn at a time.
+- Allow `experience`, `knowledge`, and `recall` memories when useful.
 - Update memory usage metadata after recall.
 - Do not introduce a separate one-shot QA command.
+- Do not write `source` memories in Phase 3.
+- Do not perform immediate memory formation after every assistant response.
 
 ### Metadata Updates
 
@@ -219,19 +229,20 @@ The system should update:
 
 - `usage_count`
 - `last_recalled_at`
-- answer-to-memory usage links
-- recall trace metadata
+- recall trace metadata in formed memory items
 
 ### Out of Scope
 
 - External search by default
+- Source memory writing
 - Heavy graph reasoning
 - Benchmarking
 
 ### Success Criteria
 
-- Answers show which memory items were used.
-- Each answer creates new reusable memory.
+- Answers can show which memory items were used when
+  `--show-memory-trace` is enabled.
+- Each formed `chat_qa` turn can create reusable experience memory.
 - Recall traces can be inspected.
 - Memory usage metadata changes over time.
 - QA behavior remains unified under `mem chat`.
