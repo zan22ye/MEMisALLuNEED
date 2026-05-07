@@ -174,3 +174,40 @@ def integrate_source_reference(
             "host_agent": host_agent,
         },
     )
+
+
+def integrate_host_evidence(
+    store: MemoryStore,
+    formation_model: ChatModel,
+    *,
+    evidence: str,
+    query: str | None = None,
+    source_ids: list[str] | None = None,
+    host_agent: str | None = None,
+    confidence: float = 1.0,
+    state: str = "success",
+    metadata: dict[str, object] | None = None,
+) -> list[MemoryItem]:
+    source_ids = list(source_ids or [])
+    payload = build_host_evidence_payload(
+        evidence=evidence,
+        query=query,
+        source_ids=source_ids,
+        host_agent=host_agent,
+        confidence=confidence,
+        state=state,
+        metadata=metadata,
+    )
+    return form_host_supplied_memories(
+        store=store,
+        formation_model=formation_model,
+        payload=payload,
+        allowed_types={"knowledge", "source"},
+        required_metadata={
+            "source": "host_supplied",
+            "formation_kind": "host_evidence",
+            "query": query,
+            "source_ids": source_ids,
+            "host_agent": host_agent,
+        },
+    )

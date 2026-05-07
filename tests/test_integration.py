@@ -4,6 +4,7 @@ from memisalluneed.integration import build_answer_trace_payload
 from memisalluneed.integration import build_host_evidence_payload
 from memisalluneed.integration import build_source_reference_payload
 from memisalluneed.integration import form_host_supplied_memories
+from memisalluneed.integration import integrate_host_evidence
 from memisalluneed.integration import integrate_source_reference
 from memisalluneed.store import MemoryStore
 
@@ -155,5 +156,36 @@ def test_integrate_source_reference_writes_source_memory(tmp_path):
     assert memory.metadata["source_uri"] == "https://example.test/article"
     assert memory.metadata["source_title"] == "Example Article"
     assert memory.metadata["retrieved_at"] == "2026-05-06T00:00:00+00:00"
+    assert memory.metadata["host_agent"] == "host-agent"
+    assert memory.metadata["run_id"] == "run-1"
+
+
+def test_integrate_host_evidence_writes_knowledge_memory(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    model = FakeFormationModel(
+        """
+{"memories":[{"type":"knowledge","content":"The host extracted a reusable fact.","state":"success","confidence":0.8,"metadata":{}},{"type":"experience","content":"Wrong type.","state":"success","confidence":0.8,"metadata":{}}]}
+""".strip()
+    )
+
+    written = integrate_host_evidence(
+        store,
+        model,
+        evidence="The host extracted a reusable fact.",
+        query="What did the host learn?",
+        source_ids=["source-1"],
+        host_agent="host-agent",
+        confidence=0.8,
+        state="success",
+        metadata={"run_id": "run-1"},
+    )
+
+    assert [memory.type for memory in written] == ["knowledge"]
+    memory = store.all()[0]
+    assert memory.metadata["source"] == "host_supplied"
+    assert memory.metadata["formation_kind"] == "host_evidence"
+    assert memory.metadata["query"] == "What did the host learn?"
+    assert memory.metadata["source_ids"] == ["source-1"]
     assert memory.metadata["host_agent"] == "host-agent"
     assert memory.metadata["run_id"] == "run-1"
