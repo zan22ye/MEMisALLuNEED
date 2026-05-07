@@ -70,6 +70,73 @@ def test_chat_parser_accepts_recall_candidate_k():
     assert args.recall_candidate_k == 50
 
 
+def test_integrate_source_parser_accepts_options():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "integrate-source",
+            "--source-uri",
+            "https://example.test/article",
+            "--source-title",
+            "Example Article",
+            "--retrieved-at",
+            "2026-05-06T00:00:00+00:00",
+            "--host-agent",
+            "host-agent",
+            "--metadata",
+            '{"run_id":"run-1"}',
+        ]
+    )
+
+    assert args.command == "integrate-source"
+    assert args.source_uri == "https://example.test/article"
+
+
+def test_integrate_evidence_parser_accepts_repeatable_source_ids():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "integrate-evidence",
+            "--evidence",
+            "Fact from host.",
+            "--source-id",
+            "source-1",
+            "--source-id",
+            "source-2",
+        ]
+    )
+
+    assert args.command == "integrate-evidence"
+    assert args.source_ids == ["source-1", "source-2"]
+
+
+def test_integrate_answer_parser_accepts_trace_ids():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "integrate-answer",
+            "--query",
+            "Question?",
+            "--answer",
+            "Answer.",
+            "--evidence-id",
+            "evidence-1",
+            "--source-id",
+            "source-1",
+            "--recalled-memory-id",
+            "memory-1",
+        ]
+    )
+
+    assert args.command == "integrate-answer"
+    assert args.evidence_ids == ["evidence-1"]
+    assert args.source_ids == ["source-1"]
+    assert args.recalled_memory_ids == ["memory-1"]
+
+
 def test_format_memory_trace_lists_used_memories():
     item = create_memory_item(
         "Phase 3 uses recalled memory.",

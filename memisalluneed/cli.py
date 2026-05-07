@@ -30,6 +30,17 @@ def _add_db_argument(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_integration_common_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--config",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to the local runtime config.",
+    )
+    _add_db_argument(parser)
+    parser.add_argument("--host-agent")
+    parser.add_argument("--metadata", default="{}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mem")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -86,6 +97,55 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the memories used after each assistant reply.",
     )
+
+    integrate_source_parser = subparsers.add_parser(
+        "integrate-source",
+        help="Integrate a host-supplied source reference.",
+    )
+    _add_integration_common_arguments(integrate_source_parser)
+    integrate_source_parser.add_argument("--source-uri", required=True)
+    integrate_source_parser.add_argument("--source-title")
+    integrate_source_parser.add_argument("--retrieved-at")
+
+    integrate_evidence_parser = subparsers.add_parser(
+        "integrate-evidence",
+        help="Integrate host-supplied evidence.",
+    )
+    _add_integration_common_arguments(integrate_evidence_parser)
+    integrate_evidence_parser.add_argument("--evidence", required=True)
+    integrate_evidence_parser.add_argument("--query")
+    integrate_evidence_parser.add_argument(
+        "--source-id",
+        action="append",
+        dest="source_ids",
+    )
+    integrate_evidence_parser.add_argument("--confidence", type=float, default=1.0)
+    integrate_evidence_parser.add_argument("--state", default="success")
+
+    integrate_answer_parser = subparsers.add_parser(
+        "integrate-answer",
+        help="Integrate a host-supplied answer trace.",
+    )
+    _add_integration_common_arguments(integrate_answer_parser)
+    integrate_answer_parser.add_argument("--query", required=True)
+    integrate_answer_parser.add_argument("--answer", required=True)
+    integrate_answer_parser.add_argument(
+        "--evidence-id",
+        action="append",
+        dest="evidence_ids",
+    )
+    integrate_answer_parser.add_argument(
+        "--source-id",
+        action="append",
+        dest="source_ids",
+    )
+    integrate_answer_parser.add_argument(
+        "--recalled-memory-id",
+        action="append",
+        dest="recalled_memory_ids",
+    )
+    integrate_answer_parser.add_argument("--confidence", type=float, default=1.0)
+    integrate_answer_parser.add_argument("--state", default="success")
 
     return parser
 
