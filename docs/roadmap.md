@@ -352,6 +352,11 @@ for one query and `older_relevant` for another query.
 
 ## Phase 4: Host-Supplied Knowledge Integration
 
+### Status
+
+Implemented as formation-model-backed host-supplied integration APIs with CLI
+wrappers.
+
 ### Goal
 
 Integrate external knowledge that is supplied by the host application.
