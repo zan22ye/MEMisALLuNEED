@@ -137,6 +137,72 @@ def test_integrate_answer_parser_accepts_trace_ids():
     assert args.recalled_memory_ids == ["memory-1"]
 
 
+def test_integrate_source_cli_dispatches_and_prints_ids(tmp_path, monkeypatch, capsys):
+    db_path = tmp_path / "memory.db"
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[chat_model]
+provider = "openai"
+model = "chat"
+[formation_model]
+provider = "openai"
+model = "formation"
+[session]
+max_turns = 6
+max_tokens = 100000
+recall_top_k = 5
+recall_candidate_k = 50
+[http]
+request_timeout = 60
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://example.test/v1"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    item = create_memory_item(
+        "Source reference",
+        memory_type="source",
+        metadata={"source": "host_supplied"},
+    )
+
+    class StubModel:
+        pass
+
+    monkeypatch.setattr(
+        "memisalluneed.cli._model_from_config",
+        lambda config, role: StubModel(),
+    )
+
+    def fake_integrate(store, formation_model, **kwargs):
+        store.add(item)
+        return [item]
+
+    monkeypatch.setattr(
+        "memisalluneed.cli.integrate_source_reference",
+        fake_integrate,
+    )
+
+    assert (
+        main(
+            [
+                "integrate-source",
+                "--config",
+                str(config_path),
+                "--db",
+                str(db_path),
+                "--source-uri",
+                "https://example.test/article",
+            ]
+        )
+        == 0
+    )
+
+    assert capsys.readouterr().out.strip() == item.id
+
+
 def test_format_memory_trace_lists_used_memories():
     item = create_memory_item(
         "Phase 3 uses recalled memory.",

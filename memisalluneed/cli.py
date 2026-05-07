@@ -12,6 +12,9 @@ from memisalluneed.config import AppConfig, ConfigOverrides, DEFAULT_CONFIG_PATH
 from memisalluneed.config import load_config
 from memisalluneed.export import export_jsonl, export_jsonl_text
 from memisalluneed.formation import FormationService
+from memisalluneed.integration import integrate_answer_trace
+from memisalluneed.integration import integrate_host_evidence
+from memisalluneed.integration import integrate_source_reference
 from memisalluneed.models.base import ChatMessage, ChatModel
 from memisalluneed.resolution import ResolvedMemoryContext
 from memisalluneed.resolution import resolve_current_memories
@@ -180,6 +183,11 @@ def _print_item(item) -> None:
     print(f"last_recalled_at: {item.last_recalled_at}")
     print(f"metadata: {json.dumps(dict(item.metadata), ensure_ascii=False, sort_keys=True)}")
     print(f"content: {item.content}")
+
+
+def _print_written_ids(memories) -> None:
+    for memory in memories:
+        print(memory.id)
 
 
 @dataclass(frozen=True)
@@ -424,6 +432,63 @@ def _run_interactive_chat(args, store: MemoryStore) -> int:
             print(format_memory_trace(result.used_memories))
 
 
+def _run_integrate_source(args, store: MemoryStore) -> int:
+    config = load_config(args.config)
+    formation_model = _model_from_config(config, config.formation_model)
+    metadata = _parse_metadata(args.metadata)
+    written = integrate_source_reference(
+        store,
+        formation_model,
+        source_uri=args.source_uri,
+        source_title=args.source_title,
+        retrieved_at=args.retrieved_at,
+        host_agent=args.host_agent,
+        metadata=metadata,
+    )
+    _print_written_ids(written)
+    return 0
+
+
+def _run_integrate_evidence(args, store: MemoryStore) -> int:
+    config = load_config(args.config)
+    formation_model = _model_from_config(config, config.formation_model)
+    metadata = _parse_metadata(args.metadata)
+    written = integrate_host_evidence(
+        store,
+        formation_model,
+        evidence=args.evidence,
+        query=args.query,
+        source_ids=args.source_ids or [],
+        host_agent=args.host_agent,
+        confidence=args.confidence,
+        state=args.state,
+        metadata=metadata,
+    )
+    _print_written_ids(written)
+    return 0
+
+
+def _run_integrate_answer(args, store: MemoryStore) -> int:
+    config = load_config(args.config)
+    formation_model = _model_from_config(config, config.formation_model)
+    metadata = _parse_metadata(args.metadata)
+    written = integrate_answer_trace(
+        store,
+        formation_model,
+        query=args.query,
+        answer=args.answer,
+        evidence_ids=args.evidence_ids or [],
+        source_ids=args.source_ids or [],
+        recalled_memory_ids=args.recalled_memory_ids or [],
+        host_agent=args.host_agent,
+        confidence=args.confidence,
+        state=args.state,
+        metadata=metadata,
+    )
+    _print_written_ids(written)
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -484,6 +549,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 print(export_jsonl_text(store), end="")
             return 0
+
+        if args.command == "integrate-source":
+            return _run_integrate_source(args, store)
+
+        if args.command == "integrate-evidence":
+            return _run_integrate_evidence(args, store)
+
+        if args.command == "integrate-answer":
+            return _run_integrate_answer(args, store)
 
         if args.command == "chat":
             return _run_interactive_chat(args, store)
