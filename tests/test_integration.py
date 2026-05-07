@@ -4,6 +4,7 @@ from memisalluneed.integration import build_answer_trace_payload
 from memisalluneed.integration import build_host_evidence_payload
 from memisalluneed.integration import build_source_reference_payload
 from memisalluneed.integration import form_host_supplied_memories
+from memisalluneed.integration import integrate_answer_trace
 from memisalluneed.integration import integrate_host_evidence
 from memisalluneed.integration import integrate_source_reference
 from memisalluneed.store import MemoryStore
@@ -187,5 +188,41 @@ def test_integrate_host_evidence_writes_knowledge_memory(tmp_path):
     assert memory.metadata["formation_kind"] == "host_evidence"
     assert memory.metadata["query"] == "What did the host learn?"
     assert memory.metadata["source_ids"] == ["source-1"]
+    assert memory.metadata["host_agent"] == "host-agent"
+    assert memory.metadata["run_id"] == "run-1"
+
+
+def test_integrate_answer_trace_writes_experience_memory(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    model = FakeFormationModel(
+        """
+{"memories":[{"type":"experience","content":"The host answered using supplied evidence.","state":"success","confidence":0.9,"metadata":{}},{"type":"knowledge","content":"Wrong type.","state":"success","confidence":0.9,"metadata":{}}]}
+""".strip()
+    )
+
+    written = integrate_answer_trace(
+        store,
+        model,
+        query="Why did the run fail?",
+        answer="It failed because httpx was missing.",
+        evidence_ids=["evidence-1"],
+        source_ids=["source-1"],
+        recalled_memory_ids=["memory-1"],
+        host_agent="host-agent",
+        confidence=0.9,
+        state="success",
+        metadata={"run_id": "run-1"},
+    )
+
+    assert [memory.type for memory in written] == ["experience"]
+    memory = store.all()[0]
+    assert memory.metadata["source"] == "host_supplied"
+    assert memory.metadata["formation_kind"] == "host_answer_trace"
+    assert memory.metadata["query"] == "Why did the run fail?"
+    assert memory.metadata["answer"] == "It failed because httpx was missing."
+    assert memory.metadata["evidence_ids"] == ["evidence-1"]
+    assert memory.metadata["source_ids"] == ["source-1"]
+    assert memory.metadata["recalled_memory_ids"] == ["memory-1"]
     assert memory.metadata["host_agent"] == "host-agent"
     assert memory.metadata["run_id"] == "run-1"

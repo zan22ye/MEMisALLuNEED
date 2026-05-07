@@ -211,3 +211,49 @@ def integrate_host_evidence(
             "host_agent": host_agent,
         },
     )
+
+
+def integrate_answer_trace(
+    store: MemoryStore,
+    formation_model: ChatModel,
+    *,
+    query: str,
+    answer: str,
+    evidence_ids: list[str] | None = None,
+    source_ids: list[str] | None = None,
+    recalled_memory_ids: list[str] | None = None,
+    host_agent: str | None = None,
+    confidence: float = 1.0,
+    state: str = "success",
+    metadata: dict[str, object] | None = None,
+) -> list[MemoryItem]:
+    evidence_ids = list(evidence_ids or [])
+    source_ids = list(source_ids or [])
+    recalled_memory_ids = list(recalled_memory_ids or [])
+    payload = build_answer_trace_payload(
+        query=query,
+        answer=answer,
+        evidence_ids=evidence_ids,
+        source_ids=source_ids,
+        recalled_memory_ids=recalled_memory_ids,
+        host_agent=host_agent,
+        confidence=confidence,
+        state=state,
+        metadata=metadata,
+    )
+    return form_host_supplied_memories(
+        store=store,
+        formation_model=formation_model,
+        payload=payload,
+        allowed_types={"experience", "recall"},
+        required_metadata={
+            "source": "host_supplied",
+            "formation_kind": "host_answer_trace",
+            "query": query,
+            "answer": answer,
+            "evidence_ids": evidence_ids,
+            "source_ids": source_ids,
+            "recalled_memory_ids": recalled_memory_ids,
+            "host_agent": host_agent,
+        },
+    )
