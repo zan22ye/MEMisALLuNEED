@@ -4,6 +4,7 @@ from memisalluneed.integration import build_answer_trace_payload
 from memisalluneed.integration import build_host_evidence_payload
 from memisalluneed.integration import build_source_reference_payload
 from memisalluneed.integration import form_host_supplied_memories
+from memisalluneed.integration import integrate_source_reference
 from memisalluneed.store import MemoryStore
 
 
@@ -126,3 +127,33 @@ def test_form_host_supplied_memories_filters_types_and_enforces_metadata(tmp_pat
     assert store.all()[0].metadata["source_ids"] == ["source-1"]
     assert store.all()[0].metadata["host_agent"] == "host-agent"
     assert store.all()[0].metadata["run_id"] == "run-1"
+
+
+def test_integrate_source_reference_writes_source_memory(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    model = FakeFormationModel(
+        """
+{"memories":[{"type":"source","content":"Source reference: Example Article https://example.test/article","state":"success","confidence":1.0,"metadata":{}},{"type":"knowledge","content":"Wrong type.","state":"success","confidence":1.0,"metadata":{}}]}
+""".strip()
+    )
+
+    written = integrate_source_reference(
+        store,
+        model,
+        source_uri="https://example.test/article",
+        source_title="Example Article",
+        retrieved_at="2026-05-06T00:00:00+00:00",
+        host_agent="host-agent",
+        metadata={"run_id": "run-1"},
+    )
+
+    assert [memory.type for memory in written] == ["source"]
+    memory = store.all()[0]
+    assert memory.metadata["source"] == "host_supplied"
+    assert memory.metadata["formation_kind"] == "host_source_reference"
+    assert memory.metadata["source_uri"] == "https://example.test/article"
+    assert memory.metadata["source_title"] == "Example Article"
+    assert memory.metadata["retrieved_at"] == "2026-05-06T00:00:00+00:00"
+    assert memory.metadata["host_agent"] == "host-agent"
+    assert memory.metadata["run_id"] == "run-1"

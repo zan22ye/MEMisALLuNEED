@@ -141,3 +141,36 @@ def form_host_supplied_memories(
         store.add(memory)
         memories.append(memory)
     return memories
+
+
+def integrate_source_reference(
+    store: MemoryStore,
+    formation_model: ChatModel,
+    *,
+    source_uri: str,
+    source_title: str | None = None,
+    retrieved_at: str | None = None,
+    host_agent: str | None = None,
+    metadata: dict[str, object] | None = None,
+) -> list[MemoryItem]:
+    payload = build_source_reference_payload(
+        source_uri=source_uri,
+        source_title=source_title,
+        retrieved_at=retrieved_at,
+        host_agent=host_agent,
+        metadata=metadata,
+    )
+    return form_host_supplied_memories(
+        store=store,
+        formation_model=formation_model,
+        payload=payload,
+        allowed_types={"source"},
+        required_metadata={
+            "source": "host_supplied",
+            "formation_kind": "host_source_reference",
+            "source_uri": source_uri,
+            "source_title": source_title,
+            "retrieved_at": retrieved_at,
+            "host_agent": host_agent,
+        },
+    )
