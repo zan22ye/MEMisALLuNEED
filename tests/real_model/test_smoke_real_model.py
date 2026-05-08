@@ -22,6 +22,16 @@ DATASET_FILES = [
     DATASET_DIR / "timestamp_resolution.jsonl",
     DATASET_DIR / "trace_export.jsonl",
 ]
+REQUIRED_EXPORT_FIELDS = {
+    "id",
+    "type",
+    "content",
+    "state",
+    "confidence",
+    "metadata",
+    "created_at",
+    "updated_at",
+}
 
 
 def load_cases() -> list[dict[str, Any]]:
@@ -187,6 +197,99 @@ def run_export_case(
     return result
 
 
+def contains_keyword(text: str, keyword: str) -> bool:
+    if any("\u4e00" <= char <= "\u9fff" for char in keyword):
+        return keyword in text
+    return keyword.casefold() in text.casefold()
+
+
+def assert_answer_contains(stdout: str, expected: dict[str, Any]) -> None:
+    any_keywords = expected.get("answer_should_contain_any")
+    if any_keywords:
+        assert any(
+            contains_keyword(stdout, str(keyword)) for keyword in any_keywords
+        ), f"stdout did not contain any of {any_keywords!r}\nstdout:\n{stdout}"
+
+    all_keywords = expected.get("answer_should_contain_all")
+    if all_keywords:
+        missing = [
+            str(keyword)
+            for keyword in all_keywords
+            if not contains_keyword(stdout, str(keyword))
+        ]
+        assert not missing, f"stdout missed {missing!r}\nstdout:\n{stdout}"
+
+
+def assert_trace(stdout: str, expected: dict[str, Any]) -> None:
+    if not expected.get("trace_should_include_memory"):
+        return
+    assert "Used memories:" in stdout
+    trace_index = stdout.index("Used memories:")
+    trace_text = stdout[trace_index:]
+    assert "- none" not in trace_text, stdout
+
+
+def metadata_contains(memory_metadata: dict[str, Any], expected: dict[str, Any]) -> bool:
+    return all(memory_metadata.get(key) == value for key, value in expected.items())
+
+
+def assert_memory_expectations(
+    *,
+    case: dict[str, Any],
+    setup_items: list[MemoryItem],
+    final_memories: list[dict[str, Any]],
+) -> None:
+    expected = case["expected"]
+    setup_count = len(setup_items)
+
+    min_total = expected.get("min_total_memories")
+    if min_total is not None:
+        assert len(final_memories) >= int(min_total)
+
+    min_new = expected.get("min_new_memories")
+    if min_new is not None:
+        assert len(final_memories) - setup_count >= int(min_new)
+
+    final_types = {str(memory["type"]) for memory in final_memories}
+    for memory_type in expected.get("memory_types_should_include", []):
+        assert memory_type in final_types
+
+    expected_metadata = expected.get("metadata_should_include")
+    if expected_metadata:
+        assert any(
+            metadata_contains(dict(memory["metadata"]), expected_metadata)
+            for memory in final_memories
+        ), f"No memory metadata contained {expected_metadata!r}"
+
+    if expected.get("old_memory_should_remain"):
+        final_ids = {str(memory["id"]) for memory in final_memories}
+        final_contents = {str(memory["content"]) for memory in final_memories}
+        for setup_item in setup_items:
+            assert (
+                setup_item.id in final_ids or setup_item.content in final_contents
+            ), f"setup memory disappeared: {setup_item.to_dict()!r}"
+
+
+def parse_exported_jsonl(raw_jsonl: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for line in raw_jsonl.splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        assert isinstance(value, dict)
+        rows.append(value)
+    return rows
+
+
+def assert_export(export_stdout: str, expected: dict[str, Any]) -> None:
+    if not expected.get("export_should_parse"):
+        return
+    rows = parse_exported_jsonl(export_stdout)
+    for row in rows:
+        missing = REQUIRED_EXPORT_FIELDS.difference(row)
+        assert not missing, f"exported row missing fields {missing!r}: {row!r}"
+
+
 def test_dataset_contains_eight_cases() -> None:
     assert len(load_cases()) == 8
 
@@ -232,6 +335,31 @@ def test_setup_case_store_inserts_setup_memories(tmp_path: Path) -> None:
     ]
 
 
+def test_contains_keyword_matches_english_case_insensitively() -> None:
+    assert contains_keyword("Use SQLite and JSONL.", "sqlite")
+
+
+def test_contains_keyword_matches_chinese_by_substring() -> None:
+    assert contains_keyword("默认语言是中文。", "中文")
+
+
+def test_parse_exported_jsonl_requires_objects() -> None:
+    rows = parse_exported_jsonl('{"id":"one","type":"knowledge"}\n')
+
+    assert rows == [{"id": "one", "type": "knowledge"}]
+
+
+def test_metadata_contains_requires_exact_key_values() -> None:
+    assert metadata_contains(
+        {"formation_kind": "chat_qa", "source": "chat_session"},
+        {"formation_kind": "chat_qa"},
+    )
+    assert not metadata_contains(
+        {"formation_kind": "host_evidence"},
+        {"formation_kind": "chat_qa"},
+    )
+
+
 @pytest.mark.real_model
 def test_real_model_smoke_case(case: dict[str, Any], tmp_path: Path) -> None:
     config_path = skip_unless_real_model_enabled()
@@ -268,3 +396,13 @@ def test_real_model_smoke_case(case: dict[str, Any], tmp_path: Path) -> None:
 
     final_memories = [item.to_dict() for item in MemoryStore(db_path).all()]
     write_json_artifact(case_dir, "memories.json", final_memories)
+
+    expected = case["expected"]
+    assert_answer_contains(chat_result.stdout, expected)
+    assert_trace(chat_result.stdout, expected)
+    assert_memory_expectations(
+        case=case,
+        setup_items=setup_items,
+        final_memories=final_memories,
+    )
+    assert_export(export_result.stdout, expected)
