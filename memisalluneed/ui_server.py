@@ -5,10 +5,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from memisalluneed.cli import _model_from_config as model_from_config
+from memisalluneed.cli import _session_path_for_config
+from memisalluneed.cli import flush_session_on_exit, run_chat_once
 from memisalluneed.config import DEFAULT_CONFIG_PATH
+from memisalluneed.config import load_config
 from memisalluneed.export import export_jsonl_text
 from memisalluneed.schema import MemoryItem, create_memory_item
 from memisalluneed.search import search_memories
+from memisalluneed.session import SessionState
 from memisalluneed.store import DEFAULT_DB_PATH
 from memisalluneed.store import MemoryStore
 
@@ -108,3 +113,54 @@ def search_memory_results(
 
 def export_memories(state: UIState) -> str:
     return export_jsonl_text(store_for_state(state))
+
+
+def session_path_for_state(state: UIState) -> Path:
+    return _session_path_for_config(state.config_path)
+
+
+def chat_send(
+    state: UIState,
+    message: str,
+    *,
+    resume: bool = True,
+) -> dict[str, Any]:
+    if not message.strip():
+        raise ValueError("message cannot be empty")
+    config = load_config(state.config_path)
+    result = run_chat_once(
+        user_message=message,
+        config=config,
+        store=store_for_state(state),
+        session_path=session_path_for_state(state),
+        chat_model=model_from_config(config, config.chat_model),
+        formation_model=model_from_config(config, config.formation_model),
+        resume=resume,
+    )
+    return {
+        "assistant_reply": result.assistant_reply,
+        "used_memories": [memory_to_response(memory) for memory in result.used_memories],
+    }
+
+
+def new_session(state: UIState) -> dict[str, object]:
+    SessionState.new().clear_file(session_path_for_state(state))
+    return {"ok": True}
+
+
+def clear_session(state: UIState) -> dict[str, object]:
+    SessionState.new().clear_file(session_path_for_state(state))
+    return {"ok": True}
+
+
+def flush_session(state: UIState) -> dict[str, object]:
+    config = load_config(state.config_path)
+    written = flush_session_on_exit(
+        session_path_for_state(state),
+        model_from_config(config, config.formation_model),
+        store_for_state(state),
+    )
+    return {
+        "ok": True,
+        "written_memories": [memory_to_response(item) for item in written],
+    }
