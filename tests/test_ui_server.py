@@ -26,7 +26,7 @@ from memisalluneed.ui_server import (
 )
 
 
-def test_build_status_reports_paths_without_api_keys(tmp_path: Path):
+def test_build_status_reports_paths_without_api_key_values(tmp_path: Path, monkeypatch):
     db_path = tmp_path / "memory.db"
     config_path = tmp_path / "config.toml"
     config_path.write_text(
@@ -50,17 +50,78 @@ base_url = "https://example.test/v1"
 """.strip(),
         encoding="utf-8",
     )
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-api-key")
     state = UIState(db_path=db_path, config_path=config_path)
 
     status = build_status(state)
 
-    assert status == {
-        "db_path": str(db_path),
-        "config_path": str(config_path),
-        "db_exists": False,
-        "config_exists": True,
+    assert status["db_path"] == str(db_path)
+    assert status["config_path"] == str(config_path)
+    assert status["db_exists"] is False
+    assert status["config_exists"] is True
+    assert "secret-api-key" not in json.dumps(status)
+
+
+def test_build_status_reports_required_api_key_names_and_presence(
+    tmp_path: Path,
+    monkeypatch,
+):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[chat_model]
+provider = "openai"
+model = "chat"
+[formation_model]
+provider = "qwen"
+model = "formation"
+[session]
+max_turns = 6
+max_tokens = 100000
+recall_top_k = 5
+recall_candidate_k = 50
+[http]
+request_timeout = 60
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://example.test/v1"
+[providers.qwen]
+api_key_env = "QWEN_API_KEY"
+base_url = "https://example.test/v1"
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("QWEN_API_KEY", "secret")
+    state = UIState(db_path=tmp_path / "memory.db", config_path=config_path)
+
+    status = build_status(state)
+
+    assert status["models"] == {
+        "chat": {
+            "provider": "openai",
+            "model": "chat",
+            "api_key_env": "OPENAI_API_KEY",
+            "api_key_set": False,
+        },
+        "formation": {
+            "provider": "qwen",
+            "model": "formation",
+            "api_key_env": "QWEN_API_KEY",
+            "api_key_set": True,
+        },
     }
-    assert "OPENAI_API_KEY" not in json.dumps(status)
+    assert "secret" not in json.dumps(status)
+
+
+def test_build_status_reports_config_error(tmp_path: Path):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("bad =", encoding="utf-8")
+    state = UIState(db_path=tmp_path / "memory.db", config_path=config_path)
+
+    status = build_status(state)
+
+    assert status["config_error"]
 
 
 def test_error_response_has_stable_shape():

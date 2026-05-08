@@ -34,7 +34,17 @@ function renderMemories(memories) {
 
 async function loadStatus() {
   const status = await requestJson("/api/status");
-  document.querySelector("#status").textContent = `${status.db_path} | ${status.config_path}`;
+  const modelStatus = status.models
+    ? Object.entries(status.models)
+        .map(([role, model]) => {
+          const keyState = model.api_key_set ? "set" : `missing ${model.api_key_env}`;
+          return `${role}: ${model.provider}/${model.model} (${keyState})`;
+        })
+        .join(" | ")
+    : status.config_error
+      ? `config error: ${status.config_error}`
+      : "config not loaded";
+  document.querySelector("#status").textContent = `${status.db_path} | ${status.config_path} | ${modelStatus}`;
 }
 
 async function loadMemories() {

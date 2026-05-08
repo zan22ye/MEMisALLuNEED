@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -44,11 +45,33 @@ def error_response(
 
 
 def build_status(state: UIState) -> dict[str, object]:
-    return {
+    status: dict[str, object] = {
         "db_path": str(state.db_path),
         "config_path": str(state.config_path),
         "db_exists": state.db_path.exists(),
         "config_exists": state.config_path.exists(),
+    }
+    if not state.config_path.exists():
+        return status
+    try:
+        config = load_config(state.config_path)
+    except Exception as error:
+        status["config_error"] = str(error)
+        return status
+    status["models"] = {
+        "chat": model_status(config, config.chat_model),
+        "formation": model_status(config, config.formation_model),
+    }
+    return status
+
+
+def model_status(config, role) -> dict[str, object]:
+    provider = config.providers[role.provider]
+    return {
+        "provider": role.provider,
+        "model": role.model,
+        "api_key_env": provider.api_key_env,
+        "api_key_set": bool(os.environ.get(provider.api_key_env)),
     }
 
 
