@@ -57,3 +57,23 @@ def test_cli_add_rejects_invalid_metadata_json(tmp_path, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "Invalid metadata JSON" in captured.err
+
+
+def test_cli_add_accepts_unquoted_multi_token_content(tmp_path, capsys):
+    db_path = tmp_path / "memory.db"
+
+    assert main(["add", "你好", "世界", "--db", str(db_path)]) == 0
+    assert main(["list", "--db", str(db_path)]) == 0
+
+    assert "你好 世界" in capsys.readouterr().out
+
+
+def test_cli_search_accepts_unquoted_multi_token_query(tmp_path, capsys):
+    db_path = tmp_path / "memory.db"
+
+    assert main(["add", "你好 世界", "--db", str(db_path)]) == 0
+    capsys.readouterr()
+
+    assert main(["search", "你好", "世界", "--db", str(db_path)]) == 0
+
+    assert "你好 世界" in capsys.readouterr().out

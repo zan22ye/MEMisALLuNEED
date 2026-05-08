@@ -52,7 +52,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_argument(init_parser)
 
     add_parser = subparsers.add_parser("add", help="Add a memory item.")
-    add_parser.add_argument("content")
+    add_parser.add_argument("content", nargs="+")
     add_parser.add_argument("--type", default="knowledge", dest="memory_type")
     add_parser.add_argument("--state", default="success")
     add_parser.add_argument("--confidence", default=1.0, type=float)
@@ -69,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     _add_db_argument(show_parser)
 
     search_parser = subparsers.add_parser("search", help="Search memory items.")
-    search_parser.add_argument("query")
+    search_parser.add_argument("query", nargs="+")
     search_parser.add_argument("--top-k", default=5, type=int)
     _add_db_argument(search_parser)
 
@@ -170,6 +170,12 @@ def _parse_metadata(raw_metadata: str) -> dict[str, object]:
         raise ValueError("Invalid metadata JSON: value must be an object")
 
     return metadata
+
+
+def _join_text_parts(parts: str | Sequence[str]) -> str:
+    if isinstance(parts, str):
+        return parts
+    return " ".join(parts)
 
 
 def _print_item(item) -> None:
@@ -410,11 +416,13 @@ def _run_interactive_chat(args, store: MemoryStore) -> int:
             flush_session_on_exit(session_path, formation_model, store)
             return 0
 
-        if user_message in {"/exit", "/quit"}:
+        stripped_message = user_message.strip()
+
+        if stripped_message in {"/exit", "/quit"}:
             flush_session_on_exit(session_path, formation_model, store)
             return 0
 
-        if not user_message.strip():
+        if not stripped_message:
             continue
 
         result = run_chat_once(
@@ -505,7 +513,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "add":
             metadata = _parse_metadata(args.metadata)
             item = create_memory_item(
-                args.content,
+                _join_text_parts(args.content),
                 memory_type=args.memory_type,
                 state=args.state,
                 confidence=args.confidence,
@@ -535,7 +543,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         if args.command == "search":
-            for result in search_memories(store, args.query, top_k=args.top_k):
+            for result in search_memories(
+                store,
+                _join_text_parts(args.query),
+                top_k=args.top_k,
+            ):
                 print(
                     f"{result.item.id} score={result.score:g} "
                     f"{result.item.content}"

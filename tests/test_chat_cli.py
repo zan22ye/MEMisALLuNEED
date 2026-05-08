@@ -263,8 +263,10 @@ def test_build_chat_messages_includes_resolved_memory_sections():
 class FakeChatModel:
     def __init__(self):
         self.messages = None
+        self.calls = 0
 
     def complete(self, messages):
+        self.calls += 1
         self.messages = messages
         return "assistant reply using memory"
 
@@ -490,3 +492,68 @@ base_url = "https://example.test/v1"
         == 0
     )
     assert not session_path.exists()
+
+
+def test_chat_exit_command_ignores_surrounding_whitespace(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    db_path = tmp_path / "memory.db"
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        """
+[chat_model]
+provider = "openai"
+model = "chat"
+[formation_model]
+provider = "openai"
+model = "formation"
+[session]
+max_turns = 6
+max_tokens = 100000
+recall_top_k = 5
+recall_candidate_k = 50
+[http]
+request_timeout = 60
+[providers.openai]
+api_key_env = "OPENAI_API_KEY"
+base_url = "https://example.test/v1"
+""".strip(),
+        encoding="utf-8",
+    )
+    chat_model = FakeChatModel()
+    formation_model = FakeFormationModel()
+    models = [chat_model, formation_model]
+
+    monkeypatch.setattr(
+        "memisalluneed.cli._model_from_config",
+        lambda config, role: models.pop(0),
+    )
+    inputs = iter([" /exit "])
+
+    def fake_input(prompt):
+        try:
+            return next(inputs)
+        except StopIteration as error:
+            raise EOFError from error
+
+    monkeypatch.setattr("builtins.input", fake_input)
+
+    assert (
+        main(
+            [
+                "chat",
+                "--config",
+                str(config_path),
+                "--db",
+                str(db_path),
+                "--new-session",
+                "--no-resume",
+            ]
+        )
+        == 0
+    )
+
+    assert chat_model.calls == 0
+    assert capsys.readouterr().out == ""
