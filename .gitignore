@@ -2,6 +2,7 @@
 .worktrees/
 .worktrees
 .memisalluneed/
+.env
 .pytest_cache/
 __pycache__/
 *.pyc
