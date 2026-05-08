@@ -11,6 +11,16 @@ dependencies = [
 [project.scripts]
 mem = "memisalluneed.cli:main"
 
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["memisalluneed*"]
+
+[tool.setuptools.package-data]
+memisalluneed = ["ui_static/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
