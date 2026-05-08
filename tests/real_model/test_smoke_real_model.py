@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -120,6 +122,71 @@ def write_json_artifact(path: Path, name: str, value: Any) -> None:
     )
 
 
+def run_command(
+    args: list[str],
+    *,
+    input_text: str | None = None,
+    timeout: int = 120,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        args,
+        input=input_text,
+        text=True,
+        capture_output=True,
+        timeout=timeout,
+        check=False,
+    )
+
+
+def run_chat_case(
+    *,
+    case: dict[str, Any],
+    case_dir: Path,
+    db_path: Path,
+    config_path: Path,
+) -> subprocess.CompletedProcess[str]:
+    chat_input = "\n".join([*case["chat_messages"], "/exit", ""])
+    command = [
+        sys.executable,
+        "-m",
+        "memisalluneed.cli",
+        "chat",
+        "--db",
+        str(db_path),
+        "--config",
+        str(config_path),
+        "--show-memory-trace",
+        "--new-session",
+        "--no-resume",
+    ]
+    write_artifact(case_dir, "command.txt", " ".join(command))
+    write_artifact(case_dir, "config_path.txt", str(config_path))
+    result = run_command(command, input_text=chat_input, timeout=120)
+    write_artifact(case_dir, "stdout.txt", result.stdout)
+    write_artifact(case_dir, "stderr.txt", result.stderr)
+    return result
+
+
+def run_export_case(
+    *,
+    case_dir: Path,
+    db_path: Path,
+) -> subprocess.CompletedProcess[str]:
+    command = [
+        sys.executable,
+        "-m",
+        "memisalluneed.cli",
+        "export",
+        "--db",
+        str(db_path),
+    ]
+    result = run_command(command, timeout=30)
+    write_artifact(case_dir, "export.jsonl", result.stdout)
+    if result.stderr:
+        write_artifact(case_dir, "export.stderr.txt", result.stderr)
+    return result
+
+
 def test_dataset_contains_eight_cases() -> None:
     assert len(load_cases()) == 8
 
@@ -166,5 +233,38 @@ def test_setup_case_store_inserts_setup_memories(tmp_path: Path) -> None:
 
 
 @pytest.mark.real_model
-def test_real_model_smoke_case(case: dict[str, Any]) -> None:
-    skip_unless_real_model_enabled()
+def test_real_model_smoke_case(case: dict[str, Any], tmp_path: Path) -> None:
+    config_path = skip_unless_real_model_enabled()
+    case_dir = tmp_path / str(case["id"])
+    case_dir.mkdir(parents=True)
+    db_path = case_dir / "memory.db"
+
+    write_json_artifact(case_dir, "case.json", case)
+    setup_items = setup_case_store(case, db_path)
+    write_json_artifact(
+        case_dir,
+        "setup_memories.json",
+        [item.to_dict() for item in setup_items],
+    )
+
+    chat_result = run_chat_case(
+        case=case,
+        case_dir=case_dir,
+        db_path=db_path,
+        config_path=config_path,
+    )
+    assert chat_result.returncode == 0, (
+        f"mem chat failed for {case['id']}\n"
+        f"stdout:\n{chat_result.stdout}\n"
+        f"stderr:\n{chat_result.stderr}"
+    )
+
+    export_result = run_export_case(case_dir=case_dir, db_path=db_path)
+    assert export_result.returncode == 0, (
+        f"mem export failed for {case['id']}\n"
+        f"stdout:\n{export_result.stdout}\n"
+        f"stderr:\n{export_result.stderr}"
+    )
+
+    final_memories = [item.to_dict() for item in MemoryStore(db_path).all()]
+    write_json_artifact(case_dir, "memories.json", final_memories)
