@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 
 from memisalluneed.schema import MemoryItem
@@ -13,8 +14,26 @@ class MemorySearchResult:
     score: float
 
 
+def is_cjk_character(character: str) -> bool:
+    name = unicodedata.name(character, "")
+    return "CJK UNIFIED IDEOGRAPH" in name
+
+
+def cjk_tokens(text: str) -> set[str]:
+    characters = [character for character in text if is_cjk_character(character)]
+    tokens = set(characters)
+    tokens.update(
+        "".join(characters[index : index + 2])
+        for index in range(len(characters) - 1)
+    )
+    return tokens
+
+
 def tokenize(text: str) -> set[str]:
-    return {token for token in re.split(r"\W+", text.lower()) if token}
+    normalized = text.lower()
+    tokens = {token for token in re.split(r"\W+", normalized) if token}
+    tokens.update(cjk_tokens(normalized))
+    return tokens
 
 
 def score_memory(query: str, item: MemoryItem) -> float:

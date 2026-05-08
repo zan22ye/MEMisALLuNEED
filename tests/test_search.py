@@ -13,6 +13,14 @@ def test_score_memory_uses_token_overlap():
     assert score > 0
 
 
+def test_score_memory_handles_chinese_overlap_without_spaces():
+    item = create_memory_item("用户喜欢喝冰美式。")
+
+    score = score_memory("他喜欢喝什么", item)
+
+    assert score > 0
+
+
 def test_search_returns_relevant_items_first(tmp_path):
     db_path = tmp_path / "memory.db"
     store = MemoryStore(db_path)

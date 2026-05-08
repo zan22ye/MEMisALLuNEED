@@ -156,10 +156,48 @@ def chat_once(**kwargs):
     return run_chat_once(**kwargs)
 
 
-def flush_chat_session(*args):
-    from memisalluneed.cli import flush_session_on_exit
+def formation_service(*args, **kwargs):
+    from memisalluneed.formation import FormationService
 
-    return flush_session_on_exit(*args)
+    return FormationService(*args, **kwargs)
+
+
+def turn_already_formed(store: MemoryStore, turn_id: str) -> bool:
+    for memory in store.all():
+        if (
+            memory.metadata.get("source") == "chat_session"
+            and memory.metadata.get("formation_kind") == "chat_qa"
+            and memory.metadata.get("turn_id") == turn_id
+        ):
+            return True
+    return False
+
+
+def recalled_memories_for_turn(store: MemoryStore, turn) -> list[MemoryItem]:
+    return [
+        memory
+        for memory_id in turn.recalled_memory_ids
+        if (memory := store.get(memory_id)) is not None
+    ]
+
+
+def form_unwritten_turns(state: UIState, config, formation_model, *, latest_only: bool):
+    store = store_for_state(state)
+    session = SessionState.load(session_path_for_state(state))
+    turns = session.turns[-1:] if latest_only and session.turns else session.turns
+    formation = formation_service(model=formation_model, store=store)
+    written = []
+    for turn in turns:
+        if turn_already_formed(store, turn.id):
+            continue
+        written.extend(
+            formation.form_from_chat_qa_turn(
+                session_id=session.session_id,
+                turn=turn,
+                recalled_memories=recalled_memories_for_turn(store, turn),
+            )
+        )
+    return written
 
 
 def chat_send(
@@ -180,9 +218,16 @@ def chat_send(
         formation_model=model_from_config(config, config.formation_model),
         resume=resume,
     )
+    written = form_unwritten_turns(
+        state,
+        config,
+        model_from_config(config, config.formation_model),
+        latest_only=True,
+    )
     return {
         "assistant_reply": result.assistant_reply,
         "used_memories": [memory_to_response(memory) for memory in result.used_memories],
+        "written_memories": [memory_to_response(memory) for memory in written],
     }
 
 
@@ -198,11 +243,13 @@ def clear_session(state: UIState) -> dict[str, object]:
 
 def flush_session(state: UIState) -> dict[str, object]:
     config = load_config(state.config_path)
-    written = flush_chat_session(
-        session_path_for_state(state),
+    written = form_unwritten_turns(
+        state,
+        config,
         model_from_config(config, config.formation_model),
-        store_for_state(state),
+        latest_only=False,
     )
+    SessionState.new().clear_file(session_path_for_state(state))
     return {
         "ok": True,
         "written_memories": [memory_to_response(item) for item in written],

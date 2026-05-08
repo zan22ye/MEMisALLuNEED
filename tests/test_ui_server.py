@@ -236,6 +236,42 @@ def test_chat_send_uses_run_chat_path(tmp_path: Path, monkeypatch):
     assert response["used_memories"][0]["content"] == "Project uses SQLite storage."
 
 
+def test_chat_send_auto_writes_memory_for_current_turn(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("placeholder", encoding="utf-8")
+    state = UIState(db_path=tmp_path / "memory.db", config_path=config_path)
+    config = AppConfig(
+        chat_model=ModelRoleConfig(provider="openai", model="chat"),
+        formation_model=ModelRoleConfig(provider="openai", model="formation"),
+        session=SessionConfig(
+            max_turns=6,
+            max_tokens=100000,
+            recall_top_k=1,
+            recall_candidate_k=1,
+        ),
+        http=HttpConfig(request_timeout=60),
+        providers={
+            "openai": ProviderConfig(
+                api_key_env="OPENAI_API_KEY",
+                base_url="https://example.test/v1",
+            )
+        },
+    )
+    monkeypatch.setattr("memisalluneed.ui_server.load_config", lambda path: config)
+    monkeypatch.setattr(
+        "memisalluneed.ui_server.model_from_config",
+        lambda config, role: FakeReplyModel()
+        if role.model == "chat"
+        else FakeFormationModel(),
+    )
+
+    response = chat_send(state, "Please remember this.", resume=False)
+
+    stored = MemoryStore(state.db_path).all()
+    assert response["written_memories"][0]["content"] == "formed chat memory"
+    assert [memory.content for memory in stored] == ["formed chat memory"]
+
+
 def test_session_controls_use_session_file(tmp_path: Path, monkeypatch):
     state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
     session_path = tmp_path / ".memisalluneed" / "session.json"
@@ -306,6 +342,73 @@ def test_flush_session_returns_written_memories(tmp_path: Path, monkeypatch):
 
     assert response["ok"] is True
     assert response["written_memories"][0]["content"] == "formed chat memory"
+
+
+def test_flush_session_skips_already_formed_turns(tmp_path: Path, monkeypatch):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("placeholder", encoding="utf-8")
+    state = UIState(db_path=tmp_path / "memory.db", config_path=config_path)
+    store = MemoryStore(state.db_path)
+    store.init()
+    session_path = tmp_path / ".memisalluneed" / "session.json"
+    session_path.parent.mkdir()
+    session_path.write_text(
+        """
+{
+  "session_id": "session-1",
+  "created_at": "2026-05-08T00:00:00+00:00",
+  "updated_at": "2026-05-08T00:00:00+00:00",
+  "turns": [
+    {
+      "id": "turn-1",
+      "user_message": "hello",
+      "assistant_message": "reply",
+      "recalled_memory_ids": [],
+      "created_at": "2026-05-08T00:00:00+00:00"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    store.add(
+        create_memory_item(
+            "already formed",
+            memory_type="experience",
+            metadata={
+                "source": "chat_session",
+                "formation_kind": "chat_qa",
+                "turn_id": "turn-1",
+            },
+        )
+    )
+    config = AppConfig(
+        chat_model=ModelRoleConfig(provider="openai", model="chat"),
+        formation_model=ModelRoleConfig(provider="openai", model="formation"),
+        session=SessionConfig(
+            max_turns=6,
+            max_tokens=100000,
+            recall_top_k=1,
+            recall_candidate_k=1,
+        ),
+        http=HttpConfig(request_timeout=60),
+        providers={
+            "openai": ProviderConfig(
+                api_key_env="OPENAI_API_KEY",
+                base_url="https://example.test/v1",
+            )
+        },
+    )
+    monkeypatch.setattr("memisalluneed.ui_server.load_config", lambda path: config)
+    monkeypatch.setattr(
+        "memisalluneed.ui_server.model_from_config",
+        lambda config, role: FakeFormationModel(),
+    )
+
+    response = flush_session(state)
+
+    assert response["written_memories"] == []
+    assert len(MemoryStore(state.db_path).all()) == 1
 
 
 def test_static_assets_exist():
