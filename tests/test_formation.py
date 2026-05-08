@@ -1,5 +1,6 @@
 import json
 
+from memisalluneed.formation import FORMATION_SYSTEM_PROMPT
 from memisalluneed.formation import FormationService, build_chat_qa_payload
 from memisalluneed.formation import parse_memory_candidates
 from memisalluneed.schema import create_memory_item
@@ -27,6 +28,69 @@ def test_parse_valid_memory_candidates():
     assert len(result) == 1
     assert result[0].content == "The user prefers small focused changes."
     assert result[0].metadata["source"] == "chat_session"
+
+
+def test_parse_candidates_defaults_missing_confidence():
+    result = parse_memory_candidates(
+        """
+{"memories":[{"type":"knowledge","content":"用户偏好中文回答，喜欢简洁、直接、工程化的解释。","state":"success","metadata":{"source":"chat_session","formation_kind":"chat_qa","session_id":"demo-session-1","turn_id":"demo-turn-1","recalled_memory_ids":[],"used_memory_ids":[]}}]}
+""".strip()
+    )
+
+    assert len(result) == 1
+    assert result[0].content == "用户偏好中文回答，喜欢简洁、直接、工程化的解释。"
+    assert result[0].confidence == 0.7
+
+
+def test_parse_candidates_accepts_markdown_fenced_json():
+    result = parse_memory_candidates(
+        """
+```json
+{"memories":[{"type":"knowledge","content":"用户偏好使用中文进行交流。","state":"success","confidence":1.0,"metadata":{"source":"chat_session"}}]}
+```
+""".strip()
+    )
+
+    assert len(result) == 1
+    assert result[0].content == "用户偏好使用中文进行交流。"
+
+
+def test_formation_prompt_requires_confidence_field():
+    assert "confidence" in FORMATION_SYSTEM_PROMPT
+    assert "0.0" in FORMATION_SYSTEM_PROMPT
+    assert "1.0" in FORMATION_SYSTEM_PROMPT
+
+
+def test_chat_qa_formation_fills_missing_trace_metadata(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    model = FakeFormationModel(
+        """
+{"memories":[{"type":"knowledge","content":"用户偏好使用中文进行交流。","state":"success","confidence":1.0}]}
+""".strip()
+    )
+    service = FormationService(model=model, store=store)
+    turn = SessionTurn(
+        id="turn-1",
+        user_message="请记住：我偏好中文回答。",
+        assistant_message="好的。",
+        recalled_memory_ids=[],
+        created_at="2026-05-08T00:00:00+00:00",
+    )
+
+    written = service.form_from_chat_qa_turn(
+        session_id="session-1",
+        turn=turn,
+        recalled_memories=[],
+    )
+
+    assert len(written) == 1
+    assert written[0].metadata["source"] == "chat_session"
+    assert written[0].metadata["formation_kind"] == "chat_qa"
+    assert written[0].metadata["session_id"] == "session-1"
+    assert written[0].metadata["turn_id"] == "turn-1"
+    assert written[0].metadata["recalled_memory_ids"] == []
+    assert written[0].metadata["used_memory_ids"] == []
 
 
 def test_invalid_candidates_are_skipped():
