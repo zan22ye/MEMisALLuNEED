@@ -115,6 +115,20 @@ def test_ui_cli_dispatches_to_server(monkeypatch):
     }
 
 
+def test_ui_cli_reports_port_in_use(monkeypatch, capsys):
+    def fake_serve_ui(state, *, host, port):
+        raise OSError(98, "Address already in use")
+
+    monkeypatch.setattr("memisalluneed.cli.serve_ui", fake_serve_ui)
+
+    assert main(["ui", "--host", "127.0.0.1", "--port", "8765"]) == 1
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Port already in use: 127.0.0.1:8765" in captured.err
+    assert "--port 8766" in captured.err
+
+
 def test_integrate_source_parser_accepts_options():
     parser = build_parser()
 

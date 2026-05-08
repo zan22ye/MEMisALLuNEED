@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import json
 import sys
 from dataclasses import dataclass
@@ -586,11 +587,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _run_interactive_chat(args, store)
 
         if args.command == "ui":
-            serve_ui(
-                UIState(db_path=Path(args.db), config_path=Path(args.config)),
-                host=args.host,
-                port=args.port,
-            )
+            try:
+                serve_ui(
+                    UIState(db_path=Path(args.db), config_path=Path(args.config)),
+                    host=args.host,
+                    port=args.port,
+                )
+            except OSError as error:
+                if error.errno != errno.EADDRINUSE:
+                    raise
+                print(
+                    f"Port already in use: {args.host}:{args.port}. "
+                    f"Stop the existing process or retry with --port {args.port + 1}.",
+                    file=sys.stderr,
+                )
+                return 1
             return 0
     except ValueError as error:
         print(str(error), file=sys.stderr)
