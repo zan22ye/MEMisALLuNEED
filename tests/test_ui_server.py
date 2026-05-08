@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import threading
+from http.server import ThreadingHTTPServer
 from pathlib import Path
+from urllib.request import Request, urlopen
 
 from memisalluneed.config import AppConfig, HttpConfig, ModelRoleConfig, ProviderConfig
 from memisalluneed.config import SessionConfig
@@ -256,3 +259,28 @@ def test_create_handler_returns_handler_class(tmp_path: Path):
     handler = create_handler(state)
 
     assert isinstance(handler.__name__, str)
+
+
+def test_chat_send_response_shape_is_frontend_friendly(tmp_path: Path, monkeypatch):
+    state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
+    monkeypatch.setattr(
+        "memisalluneed.ui_server.chat_send",
+        lambda state, message: {"assistant_reply": "hello", "used_memories": []},
+    )
+    server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(state))
+    thread = threading.Thread(target=server.serve_forever)
+    thread.start()
+    try:
+        request = Request(
+            f"http://127.0.0.1:{server.server_port}/api/chat/send",
+            data=b'{"message":"hi"}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+    assert payload == {"assistant_reply": "hello", "used_memories": []}
