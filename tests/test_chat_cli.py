@@ -70,6 +70,51 @@ def test_chat_parser_accepts_recall_candidate_k():
     assert args.recall_candidate_k == 50
 
 
+def test_ui_parser_accepts_options():
+    parser = build_parser()
+
+    args = parser.parse_args(
+        [
+            "ui",
+            "--db",
+            "memory.db",
+            "--config",
+            "config.toml",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8765",
+        ]
+    )
+
+    assert args.command == "ui"
+    assert args.db == "memory.db"
+    assert args.config == "config.toml"
+    assert args.host == "127.0.0.1"
+    assert args.port == 8765
+
+
+def test_ui_cli_dispatches_to_server(monkeypatch):
+    seen = {}
+
+    def fake_serve_ui(state, *, host, port):
+        seen["db_path"] = str(state.db_path)
+        seen["config_path"] = str(state.config_path)
+        seen["host"] = host
+        seen["port"] = port
+
+    monkeypatch.setattr("memisalluneed.cli.serve_ui", fake_serve_ui)
+
+    assert main(["ui", "--db", "memory.db", "--config", "config.toml"]) == 0
+
+    assert seen == {
+        "db_path": "memory.db",
+        "config_path": "config.toml",
+        "host": "127.0.0.1",
+        "port": 8765,
+    }
+
+
 def test_integrate_source_parser_accepts_options():
     parser = build_parser()
 

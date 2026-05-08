@@ -23,6 +23,7 @@ from memisalluneed.schema import utc_now
 from memisalluneed.search import search_memories
 from memisalluneed.session import DEFAULT_SESSION_PATH, SessionState, SessionTurn
 from memisalluneed.store import DEFAULT_DB_PATH, MemoryStore
+from memisalluneed.ui_server import UIState, serve_ui
 
 
 def _add_db_argument(parser: argparse.ArgumentParser) -> None:
@@ -100,6 +101,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print the memories used after each assistant reply.",
     )
+
+    ui_parser = subparsers.add_parser("ui", help="Start the local web UI.")
+    ui_parser.add_argument(
+        "--config",
+        default=str(DEFAULT_CONFIG_PATH),
+        help="Path to the local runtime config.",
+    )
+    _add_db_argument(ui_parser)
+    ui_parser.add_argument("--host", default="127.0.0.1")
+    ui_parser.add_argument("--port", default=8765, type=int)
 
     integrate_source_parser = subparsers.add_parser(
         "integrate-source",
@@ -573,6 +584,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         if args.command == "chat":
             return _run_interactive_chat(args, store)
+
+        if args.command == "ui":
+            serve_ui(
+                UIState(db_path=Path(args.db), config_path=Path(args.config)),
+                host=args.host,
+                port=args.port,
+            )
+            return 0
     except ValueError as error:
         print(str(error), file=sys.stderr)
         return 1

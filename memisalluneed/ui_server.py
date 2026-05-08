@@ -7,9 +7,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from memisalluneed.cli import _model_from_config as model_from_config
-from memisalluneed.cli import _session_path_for_config
-from memisalluneed.cli import flush_session_on_exit, run_chat_once
 from memisalluneed.config import DEFAULT_CONFIG_PATH
 from memisalluneed.config import load_config
 from memisalluneed.export import export_jsonl_text
@@ -119,7 +116,27 @@ def export_memories(state: UIState) -> str:
 
 
 def session_path_for_state(state: UIState) -> Path:
+    from memisalluneed.cli import _session_path_for_config
+
     return _session_path_for_config(state.config_path)
+
+
+def model_from_config(config, role):
+    from memisalluneed.cli import _model_from_config
+
+    return _model_from_config(config, role)
+
+
+def chat_once(**kwargs):
+    from memisalluneed.cli import run_chat_once
+
+    return run_chat_once(**kwargs)
+
+
+def flush_chat_session(*args):
+    from memisalluneed.cli import flush_session_on_exit
+
+    return flush_session_on_exit(*args)
 
 
 def chat_send(
@@ -131,7 +148,7 @@ def chat_send(
     if not message.strip():
         raise ValueError("message cannot be empty")
     config = load_config(state.config_path)
-    result = run_chat_once(
+    result = chat_once(
         user_message=message,
         config=config,
         store=store_for_state(state),
@@ -158,7 +175,7 @@ def clear_session(state: UIState) -> dict[str, object]:
 
 def flush_session(state: UIState) -> dict[str, object]:
     config = load_config(state.config_path)
-    written = flush_session_on_exit(
+    written = flush_chat_session(
         session_path_for_state(state),
         model_from_config(config, config.formation_model),
         store_for_state(state),
