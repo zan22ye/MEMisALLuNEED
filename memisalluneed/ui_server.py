@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from memisalluneed.cli import _model_from_config as model_from_config
 from memisalluneed.cli import _session_path_for_config
@@ -19,6 +21,7 @@ from memisalluneed.store import MemoryStore
 
 
 JSON_HEADERS = {"Content-Type": "application/json; charset=utf-8"}
+STATIC_DIR = Path(__file__).parent / "ui_static"
 
 
 @dataclass(frozen=True)
@@ -164,3 +167,110 @@ def flush_session(state: UIState) -> dict[str, object]:
         "ok": True,
         "written_memories": [memory_to_response(item) for item in written],
     }
+
+
+def parse_json_body(handler: SimpleHTTPRequestHandler) -> dict[str, Any]:
+    length = int(handler.headers.get("Content-Length", "0"))
+    if length == 0:
+        return {}
+    data = json.loads(handler.rfile.read(length).decode("utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("JSON body must be an object")
+    return data
+
+
+def create_handler(state: UIState):
+    class UIRequestHandler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
+
+        def send_payload(
+            self,
+            status: int,
+            headers: dict[str, str],
+            body: bytes,
+        ) -> None:
+            self.send_response(status)
+            for key, value in headers.items():
+                self.send_header(key, value)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def send_json(self, value: Any, status: int = 200) -> None:
+            self.send_payload(status, JSON_HEADERS, json_bytes(value))
+
+        def send_error_json(self, error_type: str, message: str, status: int) -> None:
+            self.send_payload(*error_response(error_type, message, status))
+
+        def do_GET(self) -> None:
+            try:
+                parsed = urlparse(self.path)
+                query = parse_qs(parsed.query)
+                if parsed.path == "/api/status":
+                    self.send_json(build_status(state))
+                elif parsed.path == "/api/memories":
+                    self.send_json(
+                        {
+                            "memories": list_memories(
+                                state,
+                                limit=int(query.get("limit", ["50"])[0]),
+                                memory_type=query.get("type", [""])[0] or None,
+                                memory_state=query.get("state", [""])[0] or None,
+                            )
+                        }
+                    )
+                elif parsed.path.startswith("/api/memories/"):
+                    memory_id = parsed.path.rsplit("/", 1)[-1]
+                    memory = get_memory(state, memory_id)
+                    if memory is None:
+                        self.send_error_json("not_found", "Memory not found", 404)
+                    else:
+                        self.send_json({"memory": memory})
+                elif parsed.path == "/api/search":
+                    self.send_json(
+                        {
+                            "results": search_memory_results(
+                                state,
+                                query.get("q", [""])[0],
+                                top_k=int(query.get("top_k", ["5"])[0]),
+                            )
+                        }
+                    )
+                elif parsed.path == "/api/export":
+                    body = export_memories(state).encode("utf-8")
+                    self.send_payload(
+                        200,
+                        {"Content-Type": "application/x-ndjson; charset=utf-8"},
+                        body,
+                    )
+                else:
+                    super().do_GET()
+            except Exception as error:
+                self.send_error_json(type(error).__name__, str(error), 400)
+
+        def do_POST(self) -> None:
+            try:
+                if self.path == "/api/memories":
+                    self.send_json({"memory": add_memory(state, parse_json_body(self))})
+                elif self.path == "/api/chat/send":
+                    payload = parse_json_body(self)
+                    self.send_json(chat_send(state, str(payload.get("message", ""))))
+                elif self.path == "/api/chat/new-session":
+                    self.send_json(new_session(state))
+                elif self.path == "/api/chat/flush":
+                    self.send_json(flush_session(state))
+                elif self.path == "/api/chat/clear":
+                    self.send_json(clear_session(state))
+                else:
+                    self.send_error_json("not_found", "Unsupported route", 404)
+            except Exception as error:
+                self.send_error_json(type(error).__name__, str(error), 400)
+
+    return UIRequestHandler
+
+
+def serve_ui(state: UIState, *, host: str, port: int) -> None:
+    server = ThreadingHTTPServer((host, port), create_handler(state))
+    print(f"MEMisALLuNEED UI running at http://{host}:{port}")
+    server.serve_forever()

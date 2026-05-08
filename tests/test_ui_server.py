@@ -9,9 +9,11 @@ from memisalluneed.schema import create_memory_item
 from memisalluneed.store import MemoryStore
 from memisalluneed.ui_server import UIState, build_status, error_response
 from memisalluneed.ui_server import (
+    STATIC_DIR,
     add_memory,
     chat_send,
     clear_session,
+    create_handler,
     export_memories,
     flush_session,
     get_memory,
@@ -240,3 +242,17 @@ def test_flush_session_returns_written_memories(tmp_path: Path, monkeypatch):
 
     assert response["ok"] is True
     assert response["written_memories"][0]["content"] == "formed chat memory"
+
+
+def test_static_assets_exist():
+    assert (STATIC_DIR / "index.html").exists()
+    assert (STATIC_DIR / "app.js").exists()
+    assert (STATIC_DIR / "styles.css").exists()
+
+
+def test_create_handler_returns_handler_class(tmp_path: Path):
+    state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
+
+    handler = create_handler(state)
+
+    assert isinstance(handler.__name__, str)

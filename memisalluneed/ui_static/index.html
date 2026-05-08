@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MEMisALLuNEED</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <strong>MEMisALLuNEED</strong>
+      <span id="status">Loading...</span>
+    </header>
+    <nav class="tabs">
+      <button data-tab="memories" class="active">Memories</button>
+      <button data-tab="chat">Chat</button>
+    </nav>
+    <main>
+      <section id="memories-tab" class="tab-panel active">
+        <form id="add-memory-form">
+          <textarea id="memory-content" placeholder="Memory content"></textarea>
+          <div class="form-row">
+            <select id="memory-type">
+              <option>knowledge</option>
+              <option>experience</option>
+              <option>recall</option>
+              <option>source</option>
+            </select>
+            <select id="memory-state">
+              <option>success</option>
+              <option>failed</option>
+              <option>uncertain</option>
+              <option>contradicted</option>
+              <option>outdated</option>
+            </select>
+            <input id="memory-confidence" type="number" min="0" max="1" step="0.1" value="1" />
+            <button type="submit">Add</button>
+          </div>
+          <textarea id="memory-metadata">{}</textarea>
+        </form>
+        <div class="toolbar">
+          <input id="search-query" placeholder="Search memories" />
+          <button id="search-button">Search</button>
+          <button id="reload-memories">Reload</button>
+          <a href="/api/export" target="_blank">Export JSONL</a>
+        </div>
+        <div class="memory-layout">
+          <div id="memory-list"></div>
+          <pre id="memory-detail"></pre>
+        </div>
+      </section>
+      <section id="chat-tab" class="tab-panel">
+        <div class="chat-layout">
+          <div id="conversation"></div>
+          <aside id="used-memories"></aside>
+        </div>
+        <textarea id="chat-input" placeholder="Send a message"></textarea>
+        <div class="toolbar">
+          <button id="send-chat">Send</button>
+          <button id="new-session">New Session</button>
+          <button id="flush-session">Flush Session</button>
+          <button id="clear-session">Clear Session</button>
+        </div>
+      </section>
+    </main>
+    <div id="error"></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

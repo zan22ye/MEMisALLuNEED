@@ -1,0 +1,104 @@
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #f7f7f5;
+  color: #1f2933;
+}
+
+.topbar {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 16px;
+  border-bottom: 1px solid #d8dee4;
+  background: #ffffff;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #d8dee4;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a {
+  cursor: pointer;
+}
+
+.tab-panel {
+  display: none;
+  padding: 16px;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.tabs button.active {
+  font-weight: 700;
+}
+
+.form-row,
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 8px 0;
+}
+
+.memory-layout,
+.chat-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 16px;
+}
+
+.memory-row {
+  border-bottom: 1px solid #d8dee4;
+  padding: 8px 0;
+  cursor: pointer;
+}
+
+.meta {
+  color: #52606d;
+  font-size: 12px;
+}
+
+textarea {
+  min-height: 72px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#conversation,
+#used-memories,
+#memory-detail {
+  min-height: 280px;
+  border: 1px solid #d8dee4;
+  background: #ffffff;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+#error {
+  color: #b42318;
+  padding: 8px 16px;
+}
+
+@media (max-width: 800px) {
+  .memory-layout,
+  .chat-layout {
+    grid-template-columns: 1fr;
+  }
+}
