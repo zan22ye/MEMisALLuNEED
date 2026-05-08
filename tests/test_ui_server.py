@@ -236,7 +236,10 @@ def test_chat_send_uses_run_chat_path(tmp_path: Path, monkeypatch):
     assert response["used_memories"][0]["content"] == "Project uses SQLite storage."
 
 
-def test_chat_send_auto_writes_memory_for_current_turn(tmp_path: Path, monkeypatch):
+def test_chat_send_does_not_auto_write_memory_for_current_turn(
+    tmp_path: Path,
+    monkeypatch,
+):
     config_path = tmp_path / "config.toml"
     config_path.write_text("placeholder", encoding="utf-8")
     state = UIState(db_path=tmp_path / "memory.db", config_path=config_path)
@@ -268,8 +271,8 @@ def test_chat_send_auto_writes_memory_for_current_turn(tmp_path: Path, monkeypat
     response = chat_send(state, "Please remember this.", resume=False)
 
     stored = MemoryStore(state.db_path).all()
-    assert response["written_memories"][0]["content"] == "formed chat memory"
-    assert [memory.content for memory in stored] == ["formed chat memory"]
+    assert response["written_memories"] == []
+    assert stored == []
 
 
 def test_session_controls_use_session_file(tmp_path: Path, monkeypatch):

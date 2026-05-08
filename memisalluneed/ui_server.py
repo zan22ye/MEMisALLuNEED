@@ -218,16 +218,10 @@ def chat_send(
         formation_model=model_from_config(config, config.formation_model),
         resume=resume,
     )
-    written = form_unwritten_turns(
-        state,
-        config,
-        model_from_config(config, config.formation_model),
-        latest_only=True,
-    )
     return {
         "assistant_reply": result.assistant_reply,
         "used_memories": [memory_to_response(memory) for memory in result.used_memories],
-        "written_memories": [memory_to_response(memory) for memory in written],
+        "written_memories": [],
     }
 
 

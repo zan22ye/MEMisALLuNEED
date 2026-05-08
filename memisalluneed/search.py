@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import re
-import unicodedata
 from dataclasses import dataclass
+
+import jieba
 
 from memisalluneed.schema import MemoryItem
 from memisalluneed.store import MemoryStore
@@ -14,25 +15,10 @@ class MemorySearchResult:
     score: float
 
 
-def is_cjk_character(character: str) -> bool:
-    name = unicodedata.name(character, "")
-    return "CJK UNIFIED IDEOGRAPH" in name
-
-
-def cjk_tokens(text: str) -> set[str]:
-    characters = [character for character in text if is_cjk_character(character)]
-    tokens = set(characters)
-    tokens.update(
-        "".join(characters[index : index + 2])
-        for index in range(len(characters) - 1)
-    )
-    return tokens
-
-
 def tokenize(text: str) -> set[str]:
     normalized = text.lower()
     tokens = {token for token in re.split(r"\W+", normalized) if token}
-    tokens.update(cjk_tokens(normalized))
+    tokens.update(token.strip() for token in jieba.cut(normalized) if token.strip())
     return tokens
 
 

@@ -2,6 +2,7 @@ from dataclasses import replace
 
 from memisalluneed.schema import create_memory_item
 from memisalluneed.search import MemorySearchResult, search_memories, score_memory
+from memisalluneed.search import tokenize
 from memisalluneed.store import MemoryStore
 
 
@@ -19,6 +20,12 @@ def test_score_memory_handles_chinese_overlap_without_spaces():
     score = score_memory("他喜欢喝什么", item)
 
     assert score > 0
+
+
+def test_tokenize_uses_jieba_for_chinese_words():
+    tokens = tokenize("自然语言处理")
+
+    assert "自然语言" in tokens
 
 
 def test_search_returns_relevant_items_first(tmp_path):
