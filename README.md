@@ -6,18 +6,24 @@ The core idea is simple:
 
 > Everything before the current moment can be treated as memory.
 
-Instead of relying on an ever-growing context window, the system treats memory as the primary substrate of intelligence. A query is answered by recalling enough relevant memory, acquiring external knowledge only when memory is insufficient, and then writing the newly formed knowledge and experience back into memory.
+Instead of relying on an ever-growing context window, the system treats memory as the primary substrate of intelligence. A query is answered by recalling relevant memory, using host-supplied external knowledge when the host application provides it, and then writing newly formed knowledge and experience back into memory.
 
 ## Core Thesis
 
 For a given query, the system needs:
 
 1. Sufficiently relevant existing memory.
-2. External knowledge only when existing memory is insufficient.
+2. Host-supplied external knowledge when the host application decides memory alone is insufficient.
 
-After answering, the system forms new memory from the query, recalled context, answer, external knowledge, and the reasoning path used to connect them.
+After answering, the system forms new memory from the query, recalled context, answer, host-supplied evidence when present, and the reasoning path used to connect them.
 
 The system therefore grows through use.
+
+## Implementation Boundary
+
+MEMisALLuNEED is the memory core. It stores, recalls, resolves, and forms memory.
+
+It does not itself search the web, crawl documents, call external tools, judge whether external evidence is sufficient, or decide that outside knowledge is needed. Those responsibilities belong to a host application. MEMisALLuNEED can integrate external knowledge after the host supplies sources, evidence, and answer traces.
 
 ## Memory-Centric Agent
 
@@ -26,11 +32,10 @@ MEMisALLuNEED is not centered on prompts, tools, or static retrieval alone. It i
 The agent:
 
 - recalls relevant memories for each query;
-- checks whether recalled memory is sufficient;
-- acquires external knowledge when necessary;
+- uses host-supplied external knowledge when provided;
 - generates an answer from memory and knowledge;
 - forms new memories from the full interaction;
-- updates relations between memories over time.
+- is designed to support memory relations in future phases.
 
 In this view, memory is not only stored after answering. Memory is also formed during remembering.
 
@@ -40,7 +45,7 @@ The system uses a unified memory item structure, while distinguishing memory by 
 
 ### Knowledge Memory
 
-Processed knowledge extracted from internal reasoning or external sources.
+Processed knowledge extracted from internal reasoning or host-supplied external sources.
 
 Examples:
 
@@ -73,11 +78,11 @@ It records:
 - how they were combined;
 - how they contributed to the final answer.
 
-### Source Reference
+### Host-Supplied Source Reference
 
-External knowledge is not stored as full raw text by default.
+Host-supplied external knowledge is not stored as full raw text by default.
 
-Instead, the system stores references such as:
+In Phase 4, the planned source integration stores references such as:
 
 - source URL;
 - title;
@@ -85,13 +90,13 @@ Instead, the system stores references such as:
 - publication time when available;
 - credibility or confidence notes.
 
-The processed knowledge and its use context are stored as memory, while the original source remains referenced.
+The processed knowledge and its use context are stored as memory, while the original source remains referenced. Current `mem chat` does not write `source` memories; host-supplied source reference integration is a planned Phase 4 capability.
 
-## External Knowledge Acquisition
+## Host-Supplied External Knowledge
 
 External knowledge is not added by default for every query.
 
-The system first recalls existing memory and performs a memory sufficiency check. External knowledge is acquired only when one or more of the following conditions hold:
+A host application may decide that existing memory is insufficient and provide external evidence or source references when one or more of the following conditions hold:
 
 - relevant memory cannot be found;
 - recalled memory has low confidence;
@@ -100,7 +105,7 @@ The system first recalls existing memory and performs a memory sufficiency check
 - existing memory lacks evidence;
 - existing memory only partially covers the query.
 
-After acquisition, external knowledge is cleaned, compressed, structured, and written back as memory.
+After the host supplies that material, MEMisALLuNEED can clean, compress, structure, and write it back as memory. MEMisALLuNEED does not perform the external acquisition itself.
 
 ## Memory Formation
 
@@ -117,7 +122,7 @@ Memory formation includes:
 - experience extraction;
 - recall trace generation;
 - metadata assignment;
-- relation updates.
+- planned relation metadata for future graph support.
 
 Failures, mistakes, and uncertain answers are also written as memory, because failed experience is still useful memory. They are marked through memory state and metadata.
 
@@ -131,7 +136,7 @@ Each memory item can include metadata such as:
 - `created_at`;
 - `source_ref`;
 - `query_context`;
-- `embedding`;
+- `vector_index_ref` or `semantic_index_ref`;
 - `usage_count`;
 - `last_recalled_at`;
 - `derived_from`;
@@ -148,7 +153,7 @@ The system does not separate memory into short-term and long-term memory. All fo
 
 Memory items are not isolated text chunks.
 
-They form a graph of relationships:
+The project is designed so future phases can represent a graph of relationships:
 
 - one memory can support another;
 - one memory can contradict another;
@@ -157,7 +162,7 @@ They form a graph of relationships:
 - multiple memories can be recalled together;
 - memories can be linked to the answers they helped produce.
 
-This allows the system to remember not just information, but how information interacts.
+This is a planned Phase 5 capability. Current `mem chat` does not perform graph reasoning or automatic relation updates.
 
 ## Session Context Constraint
 
@@ -172,26 +177,18 @@ If older information is needed later, it must be brought back through recall.
 
 This rule prevents the system from depending on an ever-growing prompt and forces it to rely on memory.
 
-## Rolling Memory Write
+## Rolling And Flush Memory Formation
 
-The system uses rolling memory writes plus a lightweight per-turn check.
+The current chat flow uses rolling memory formation plus exit flush formation.
 
 When the session exceeds the `k` turn or token limit:
 
 1. the oldest content is removed from active context;
 2. a smaller model cleans and compresses it;
 3. new memory items are written to the memory substrate;
-4. memory relations and metadata are updated.
+4. metadata is attached to preserve the chat formation trace.
 
-After each query-answer turn, the system also checks whether the latest interaction produced important new memory, such as:
-
-- new knowledge;
-- user preference;
-- important conclusion;
-- external knowledge;
-- error or failed attempt;
-- recall trace;
-- relation update.
+When the user exits chat, remaining active turns are flushed into memory. Current `mem chat` does not immediately form memory after every assistant response.
 
 ## Growth Loop
 
@@ -199,13 +196,12 @@ The system grows through the following loop:
 
 1. A user submits a query.
 2. The system recalls relevant memories.
-3. The system checks whether memory is sufficient.
-4. The system acquires external knowledge if needed.
-5. The system generates an answer.
-6. The system forms new knowledge, experience, and recall memories.
+3. The system resolves the recalled candidates into bounded chat context.
+4. The system generates an answer from active session context and recalled memory.
+5. The host application may supply external sources, evidence, or answer traces.
+6. The system forms new knowledge, experience, and recall memories during rolling or exit flush formation.
 7. The system writes new memory items into the unified memory substrate.
-8. The system updates the memory graph.
-9. Future queries reuse both knowledge and experience.
+8. Future queries reuse both knowledge and experience.
 
 ## Why This Matters
 
@@ -214,21 +210,21 @@ Traditional systems often treat context as temporary and retrieval as access to 
 MEMisALLuNEED treats memory as the core growing structure:
 
 - conversations become reusable experience;
-- external knowledge becomes internalized knowledge;
+- host-supplied external knowledge can become internalized knowledge;
 - recall events become future recall guidance;
 - errors become marked memories instead of disappearing;
 - old context is not kept in prompt, but transformed into memory.
 
 The result is a system that can grow through interaction rather than merely respond within a context window.
 
-## Phase 1 CLI Quickstart
+## CLI Quickstart
 
-The first runnable milestone is the `mem` CLI.
+The current runnable interface is the `mem` CLI.
 
 ```bash
 mem init
 mem add "Everything before the current moment can be treated as memory."
-mem add "External knowledge is acquired only when memory is insufficient."
+mem add "Host-supplied external knowledge is integrated only after the host provides it."
 mem list
 mem search "when should external knowledge be used"
 mem export
@@ -236,16 +232,62 @@ mem export
 
 Runtime data is stored in `.memisalluneed/memory.db`, which is ignored by git.
 
+Memory-centric chat is available through:
+
+```bash
+mem chat
+```
+
+The chat flow recalls relevant memories, keeps the active session bounded,
+rolls older turns into memory, and can show the recalled memory trace:
+
+```bash
+mem chat --show-memory-trace
+```
+
+DeepSeek can be used through the existing OpenAI-compatible provider layer.
+Set `DEEPSEEK_API_KEY`, then override the provider and model:
+
+```bash
+mem chat --chat-provider deepseek --chat-model deepseek-chat
+```
+
+SiliconFlow can also be used through the same OpenAI-compatible provider
+layer. Set `SILICONFLOW_API_KEY`, then choose a SiliconFlow model:
+
+```bash
+mem chat --chat-provider siliconflow --chat-model Pro/zai-org/GLM-4.7
+```
+
 ## Project Status
 
-This repository is currently in the concept and design stage.
+This repository has progressed beyond the initial concept stage.
 
-The next step is to define the first runnable prototype:
+Implemented:
 
-- memory item schema;
-- memory graph storage;
-- recall pipeline;
-- sufficiency checker;
-- external knowledge acquisition interface;
-- memory formation model;
-- session context manager.
+- Phase 1: CLI memory substrate with SQLite storage and JSONL export.
+- Phase 2: session-to-memory formation through `mem chat`.
+- Phase 3: memory-centric QA behavior inside `mem chat`.
+- Phase 3.5: deterministic timestamp-aware memory resolution for chat context.
+
+Current CLI commands:
+
+- `mem init`
+- `mem add`
+- `mem list`
+- `mem show`
+- `mem search`
+- `mem export`
+- `mem chat`
+
+Phase 4 is not implemented yet. The current Phase 4 direction is
+host-supplied knowledge integration: the host application acquires sources and
+evidence, while MEMisALLuNEED accepts that host-provided material and forms
+structured memories from it. The planned interfaces are:
+
+- `mem integrate-source`
+- `mem integrate-evidence`
+- `mem integrate-answer`
+
+These Phase 4 commands are design targets, not currently available CLI
+commands.

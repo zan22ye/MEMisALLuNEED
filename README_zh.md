@@ -6,7 +6,7 @@
 
 > 此刻之前的一切，都可以被视为记忆。
 
-系统不应该依赖不断增长的上下文窗口，而应该把记忆作为智能的核心载体。面对一个 query，系统先召回足够相关的记忆；当已有记忆不足时，再接触外部知识；随后将本次形成的新知识、新经验和召回过程重新写入记忆。
+系统不应该依赖不断增长的上下文窗口，而应该把记忆作为智能的核心载体。面对一个 query，系统先召回相关记忆；当 host application 提供外部知识时，系统再使用这些 host-supplied evidence；随后将本次形成的新知识、新经验和召回过程重新写入记忆。
 
 因此，系统会在使用中持续成长。
 
@@ -15,11 +15,17 @@
 对于一个 query，系统需要：
 
 1. 足够相关的已有记忆。
-2. 当已有记忆不足时，才需要外部知识。
+2. 当 host application 判断已有记忆不足时，接收 host-supplied external knowledge。
 
-回答完成后，系统会从 query、召回内容、answer、外部知识以及它们之间的连接路径中形成新的记忆。
+回答完成后，系统会从 query、召回内容、answer、host-supplied evidence 以及它们之间的连接路径中形成新的记忆。
 
 这意味着系统不是一次性回答问题，而是在每次交互中积累可复用的知识与经验。
+
+## 实现边界
+
+MEMisALLuNEED 是 memory core。它负责存储、召回、解析和形成记忆。
+
+它本身不搜索网页、不抓取文档、不调用外部工具、不判断外部 evidence 是否足够，也不决定是否需要外部知识。这些职责属于 host application。MEMisALLuNEED 可以在 host 提供 sources、evidence 和 answer traces 之后，将这些材料整合为记忆。
 
 ## Memory-Centric Agent
 
@@ -28,11 +34,10 @@ MEMisALLuNEED 的核心不是 prompt、tool，也不是静态 RAG，而是一个
 这个 agent 会：
 
 - 为每个 query 召回相关记忆；
-- 判断召回的记忆是否足够；
-- 在必要时接触外部知识；
+- 在 host 提供外部知识时使用这些材料；
 - 基于记忆与知识生成 answer；
 - 从完整交互过程中形成新记忆；
-- 持续更新记忆之间的关系。
+- 为未来的 memory relation 能力保留设计空间。
 
 在这个视角下，记忆不只是在回答之后被保存。记忆也会在回忆过程中形成。
 
@@ -42,7 +47,7 @@ MEMisALLuNEED 的核心不是 prompt、tool，也不是静态 RAG，而是一个
 
 ### Knowledge Memory
 
-Knowledge Memory 是经过处理后的知识，来源可以是内部推理，也可以是外部资料。
+Knowledge Memory 是经过处理后的知识，来源可以是内部推理，也可以是 host-supplied external sources。
 
 例如：
 
@@ -75,11 +80,11 @@ Recall Memory 是一次召回事件的压缩 trace。
 - 它们如何被组合；
 - 它们如何参与最终 answer。
 
-### Source Reference
+### Host-Supplied Source Reference
 
-外部知识默认不以全文原文形式保存。
+Host-supplied external knowledge 默认不以全文原文形式保存。
 
-系统保存的是来源引用，例如：
+Phase 4 计划中的 source integration 会保存来源引用，例如：
 
 - source URL；
 - 标题；
@@ -87,13 +92,13 @@ Recall Memory 是一次召回事件的压缩 trace。
 - 可用时记录发布时间；
 - 可信度或置信度说明。
 
-系统保存的是被加工后的知识，以及这些知识在具体场景中的使用方式；原始资料则以引用形式保留。
+系统保存的是被加工后的知识，以及这些知识在具体场景中的使用方式；原始资料则以引用形式保留。当前 `mem chat` 不写入 `source` memories；host-supplied source reference integration 是计划中的 Phase 4 能力。
 
-## 外部知识获取
+## Host-Supplied External Knowledge
 
 外部知识不会对每个 query 默认添加。
 
-系统会先召回已有记忆，并进行 memory sufficiency check。只有在以下情况出现时，才会触发 external knowledge acquisition：
+Host application 可以判断已有记忆不足，并在以下情况出现时提供 external evidence 或 source references：
 
 - 找不到足够相关的记忆；
 - 召回记忆的置信度较低；
@@ -102,7 +107,7 @@ Recall Memory 是一次召回事件的压缩 trace。
 - 已有记忆缺少证据支撑；
 - 已有记忆只能覆盖 query 的一部分。
 
-外部知识被获取后，会经过清洗、压缩和结构化，然后写入记忆。
+当 host 提供这些材料后，MEMisALLuNEED 可以对其进行清洗、压缩和结构化，然后写入记忆。MEMisALLuNEED 本身不执行 external acquisition。
 
 ## 记忆形成
 
@@ -119,7 +124,7 @@ Recall Memory 是一次召回事件的压缩 trace。
 - 经验抽取；
 - recall trace 生成；
 - metadata 标注；
-- 关系更新。
+- 为未来 graph 支持保留的 relation metadata。
 
 失败、错误和不确定的回答也会被写入记忆，因为失败经验同样是有价值的记忆。它们会通过 memory state 和 metadata 被标记。
 
@@ -133,7 +138,7 @@ Recall Memory 是一次召回事件的压缩 trace。
 - `created_at`；
 - `source_ref`；
 - `query_context`；
-- `embedding`；
+- `vector_index_ref` 或 `semantic_index_ref`；
 - `usage_count`；
 - `last_recalled_at`；
 - `derived_from`；
@@ -150,7 +155,7 @@ Recall Memory 是一次召回事件的压缩 trace。
 
 Memory item 不是孤立的文本块。
 
-它们会形成一个关系图：
+项目设计允许未来阶段表示一个关系图：
 
 - 一条记忆可以支持另一条记忆；
 - 一条记忆可以反驳另一条记忆；
@@ -159,7 +164,7 @@ Memory item 不是孤立的文本块。
 - 多条记忆可以在同一次 recall 中共同出现；
 - 记忆可以连接到它们参与生成的 answer。
 
-这样，系统记住的不只是信息本身，也包括信息之间如何相互作用。
+这是计划中的 Phase 5 能力。当前 `mem chat` 不执行 graph reasoning，也不会自动更新 memory relations。
 
 ## Session Context Constraint
 
@@ -174,26 +179,18 @@ Memory item 不是孤立的文本块。
 
 这条规则防止系统依赖不断增长的 prompt，并迫使系统真正依赖记忆。
 
-## Rolling Memory Write
+## Rolling And Flush Memory Formation
 
-系统使用滚动写入和每轮轻量检查。
+当前 chat flow 使用 rolling memory formation 和 exit flush formation。
 
 当 session 超过 `k` 轮或 `k` token 限制时：
 
 1. 最旧的内容会从 active context 中移除；
 2. 小模型对其进行清洗和压缩；
 3. 新的 memory items 被写入 memory substrate；
-4. 记忆关系和 metadata 被更新。
+4. metadata 会保留 chat formation trace。
 
-每一轮 query-answer 结束后，系统也会检查本轮是否产生了重要新记忆，例如：
-
-- 新知识；
-- 用户偏好；
-- 重要结论；
-- 外部知识；
-- 错误或失败尝试；
-- recall trace；
-- 关系更新。
+当用户退出 chat 时，剩余 active turns 会被 flush 进记忆。当前 `mem chat` 不会在每个 assistant response 后立即形成 memory。
 
 ## 成长闭环
 
@@ -201,13 +198,12 @@ Memory item 不是孤立的文本块。
 
 1. 用户提出 query。
 2. 系统召回相关记忆。
-3. 系统判断记忆是否足够。
-4. 必要时，系统获取外部知识。
-5. 系统生成 answer。
-6. 系统形成新的 knowledge、experience 和 recall memories。
+3. 系统将召回候选解析为 bounded chat context。
+4. 系统基于 active session context 和 recalled memory 生成 answer。
+5. Host application 可以提供 external sources、evidence 或 answer traces。
+6. 系统在 rolling 或 exit flush formation 中形成新的 knowledge、experience 和 recall memories。
 7. 新的 memory items 被写入统一 memory substrate。
-8. 系统更新 memory graph。
-9. 未来 query 可以复用这些知识和经验。
+8. 未来 query 可以复用这些知识和经验。
 
 ## 为什么重要
 
@@ -216,21 +212,21 @@ Memory item 不是孤立的文本块。
 MEMisALLuNEED 把记忆视为核心的成长结构：
 
 - 对话会变成可复用经验；
-- 外部知识会变成内部化知识；
+- host-supplied external knowledge 可以变成内部化知识；
 - recall 事件会变成未来召回的参考；
 - 错误不会消失，而是变成带状态标记的记忆；
 - 旧上下文不会堆进 prompt，而是被转化为记忆。
 
 最终目标是构建一个能通过交互持续成长的系统，而不是一个只在上下文窗口内临时回答问题的系统。
 
-## Phase 1 CLI 快速开始
+## CLI 快速开始
 
-第一个可运行里程碑是 `mem` CLI。
+当前可运行入口是 `mem` CLI。
 
 ```bash
 mem init
 mem add "Everything before the current moment can be treated as memory."
-mem add "External knowledge is acquired only when memory is insufficient."
+mem add "Host-supplied external knowledge is integrated only after the host provides it."
 mem list
 mem search "when should external knowledge be used"
 mem export
@@ -238,16 +234,57 @@ mem export
 
 本地运行数据存放在 `.memisalluneed/memory.db`，该目录不会提交到 git。
 
+记忆中心的聊天入口是：
+
+```bash
+mem chat
+```
+
+chat 流程会召回相关记忆，限制 active session 的大小，将较早的对话滚动写入记忆，并可以显示本轮使用的记忆 trace：
+
+```bash
+mem chat --show-memory-trace
+```
+
+DeepSeek 可以通过现有的 OpenAI-compatible provider layer 使用。设置
+`DEEPSEEK_API_KEY` 后，可以通过参数切换 provider 和 model：
+
+```bash
+mem chat --chat-provider deepseek --chat-model deepseek-chat
+```
+
+SiliconFlow 也可以通过同一个 OpenAI-compatible provider layer 使用。设置
+`SILICONFLOW_API_KEY` 后，选择一个 SiliconFlow 模型即可：
+
+```bash
+mem chat --chat-provider siliconflow --chat-model Pro/zai-org/GLM-4.7
+```
+
 ## 项目状态
 
-当前仓库处于概念和设计阶段。
+当前仓库已经不只是概念和设计阶段。
 
-下一步是定义第一个可运行原型：
+已经实现：
 
-- memory item schema；
-- memory graph storage；
-- recall pipeline；
-- sufficiency checker；
-- external knowledge acquisition interface；
-- memory formation model；
-- session context manager。
+- Phase 1：CLI memory substrate，使用 SQLite 存储，并支持 JSONL 导出；
+- Phase 2：通过 `mem chat` 实现 session-to-memory formation；
+- Phase 3：在 `mem chat` 中实现 memory-centric QA；
+- Phase 3.5：为 chat context 实现确定性的 timestamp-aware memory resolution。
+
+当前 CLI 命令包括：
+
+- `mem init`
+- `mem add`
+- `mem list`
+- `mem show`
+- `mem search`
+- `mem export`
+- `mem chat`
+
+Phase 4 尚未实现。当前 Phase 4 的方向是 host-supplied knowledge integration：由 host application 负责获取 sources 和 evidence，MEMisALLuNEED 接收 host 提供的材料，并将其形成结构化记忆。计划中的接口包括：
+
+- `mem integrate-source`
+- `mem integrate-evidence`
+- `mem integrate-answer`
+
+这些 Phase 4 命令目前只是设计目标，还不是可用的 CLI 命令。

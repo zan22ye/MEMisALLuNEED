@@ -20,6 +20,13 @@ def test_load_example_config():
     assert config.http.request_timeout == 60
     assert config.providers["kimi"].base_url == "https://api.moonshot.cn/v1"
     assert config.providers["qwen"].api_key_env == "QWEN_API_KEY"
+    assert config.providers["deepseek"].api_key_env == "DEEPSEEK_API_KEY"
+    assert config.providers["deepseek"].base_url == "https://api.deepseek.com"
+    assert config.providers["siliconflow"].api_key_env == "SILICONFLOW_API_KEY"
+    assert (
+        config.providers["siliconflow"].base_url
+        == "https://api.siliconflow.cn/v1"
+    )
 
 
 def test_cli_overrides_replace_config_values(tmp_path):

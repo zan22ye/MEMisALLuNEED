@@ -25,9 +25,44 @@ Do not include retrieval scores or recall_scores.
 Do not talk to the user."""
 
 
+def _contains_surrogate(value: Any) -> bool:
+    if isinstance(value, str):
+        return any(0xD800 <= ord(character) <= 0xDFFF for character in value)
+    if isinstance(value, dict):
+        return any(
+            _contains_surrogate(key) or _contains_surrogate(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_contains_surrogate(item) for item in value)
+    return False
+
+
+def _extract_json_object(raw_json: str) -> str:
+    text = raw_json.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL)
+    if fenced:
+        return fenced.group(1).strip()
+    return text
+
+
+def _content_to_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        parts = [
+            item
+            for key in ("zh", "en")
+            if isinstance((item := value.get(key)), str) and item.strip()
+        ]
+        if parts:
+            return "\n".join(parts)
+    return str(value)
+
+
 def parse_memory_candidates(raw_json: str) -> list[MemoryItem]:
     try:
-        data = json.loads(extract_json_object(raw_json))
+        data = json.loads(_extract_json_object(raw_json))
     except json.JSONDecodeError:
         return []
 
@@ -43,13 +78,18 @@ def parse_memory_candidates(raw_json: str) -> list[MemoryItem]:
         if not isinstance(raw_memory, dict):
             continue
         try:
-            metadata = raw_memory.get("metadata", {})
-            if not isinstance(metadata, dict):
+            metadata = raw_memory.get("metadata")
+            if metadata is None:
+                metadata = {}
+            elif not isinstance(metadata, dict):
                 continue
-            confidence = raw_memory.get("confidence", 0.7)
+            content = _content_to_text(raw_memory.get("content", ""))
+            if _contains_surrogate(content) or _contains_surrogate(metadata):
+                continue
+            confidence = raw_memory.get("confidence", raw_memory.get("importance", 0.7))
             memories.append(
                 create_memory_item(
-                    str(raw_memory.get("content", "")),
+                    content,
                     memory_type=str(raw_memory.get("type", "")),
                     state=str(raw_memory.get("state", "")),
                     confidence=float(confidence),
@@ -60,14 +100,6 @@ def parse_memory_candidates(raw_json: str) -> list[MemoryItem]:
             continue
 
     return memories
-
-
-def extract_json_object(raw_json: str) -> str:
-    text = raw_json.strip()
-    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL)
-    if fenced:
-        return fenced.group(1).strip()
-    return text
 
 
 def build_chat_qa_payload(
@@ -133,24 +165,34 @@ class FormationService:
         memories = parse_memory_candidates(raw_response)
         if payload.get("formation_kind") == "chat_qa":
             memories = [memory for memory in memories if memory.type != "source"]
-            memories = [with_chat_qa_metadata(memory, payload) for memory in memories]
+            memories = [
+                _with_chat_qa_trace_metadata(memory, payload) for memory in memories
+            ]
         for memory in memories:
             self.store.add(memory)
         return memories
 
 
-def with_chat_qa_metadata(memory: MemoryItem, payload: dict[str, Any]) -> MemoryItem:
+def _with_chat_qa_trace_metadata(
+    memory: MemoryItem,
+    payload: dict[str, Any],
+) -> MemoryItem:
     turn = payload.get("turn", {})
-    turn_id = turn.get("id", "") if isinstance(turn, dict) else ""
-    defaults = {
-        "source": "chat_session",
-        "formation_kind": "chat_qa",
-        "session_id": payload.get("session_id", ""),
-        "turn_id": turn_id,
-        "recalled_memory_ids": payload.get("used_memory_ids", []),
-        "used_memory_ids": payload.get("used_memory_ids", []),
-    }
-    metadata = {**defaults, **dict(memory.metadata)}
+    metadata = dict(memory.metadata)
+    metadata.update(
+        {
+            "source": "chat_session",
+            "formation_kind": "chat_qa",
+            "session_id": payload.get("session_id"),
+            "turn_id": turn.get("id") if isinstance(turn, dict) else None,
+            "recalled_memory_ids": [
+                memory["id"]
+                for memory in payload.get("recalled_memories", [])
+                if isinstance(memory, dict) and "id" in memory
+            ],
+            "used_memory_ids": list(payload.get("used_memory_ids", [])),
+        }
+    )
     return MemoryItem(
         id=memory.id,
         type=memory.type,

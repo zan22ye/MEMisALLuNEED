@@ -104,6 +104,92 @@ def test_invalid_candidates_are_skipped():
     assert result[0].content == "Valid memory."
 
 
+def test_surrogate_candidates_are_skipped():
+    result = parse_memory_candidates(
+        '{"memories":[{"type":"knowledge","content":"Bad \\ud83d memory.",'
+        '"state":"success","confidence":0.8,"metadata":{"source":"chat_session"}},'
+        '{"type":"knowledge","content":"Valid memory.","state":"success",'
+        '"confidence":0.8,"metadata":{"source":"chat_session"}}]}'
+    )
+
+    assert len(result) == 1
+    assert result[0].content == "Valid memory."
+
+
+def test_parse_fenced_multilingual_importance_memory_candidates():
+    result = parse_memory_candidates(
+        """```json
+{
+  "memories": [
+    {
+      "content": {
+        "zh": "用户的 recall_test_code 为 BLUE_ORANGE_42。",
+        "en": "The user's recall_test_code is BLUE_ORANGE_42."
+      },
+      "importance": 0.7,
+      "metadata": {
+        "source": "chat_session",
+        "formation_kind": "chat_qa",
+        "session_id": "session-test",
+        "turn_id": "turn-test",
+        "recalled_memory_ids": [],
+        "used_memory_ids": []
+      },
+      "state": "success",
+      "type": "knowledge"
+    }
+  ]
+}
+```"""
+    )
+
+    assert len(result) == 1
+    assert "用户的 recall_test_code 为 BLUE_ORANGE_42。" in result[0].content
+    assert "The user's recall_test_code is BLUE_ORANGE_42." in result[0].content
+    assert result[0].confidence == 0.7
+
+
+def test_chat_qa_formation_fills_missing_confidence_and_trace_metadata(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    store.init()
+    model = FakeFormationModel(
+        """```json
+{
+  "memories": [
+    {
+      "type": "knowledge",
+      "state": "success",
+      "content": "用户的 recall_test_code 是 BLUE_ORANGE_42。"
+    }
+  ]
+}
+```"""
+    )
+    service = FormationService(model=model, store=store)
+    turn = SessionTurn(
+        id="turn-1",
+        user_message="请记住这条长期记忆：我的 recall_test_code 是 BLUE_ORANGE_42。",
+        assistant_message="已记录。您的 recall_test_code 是 BLUE_ORANGE_42。",
+        recalled_memory_ids=[],
+        created_at="2026-05-07T00:00:00+00:00",
+    )
+
+    written = service.form_from_chat_qa_turn(
+        session_id="session-1",
+        turn=turn,
+        recalled_memories=[],
+    )
+
+    assert len(written) == 1
+    assert written[0].confidence == 0.7
+    assert written[0].metadata["source"] == "chat_session"
+    assert written[0].metadata["formation_kind"] == "chat_qa"
+    assert written[0].metadata["session_id"] == "session-1"
+    assert written[0].metadata["turn_id"] == "turn-1"
+    assert written[0].metadata["recalled_memory_ids"] == []
+    assert written[0].metadata["used_memory_ids"] == []
+
+
 def test_chat_qa_formation_writes_valid_memory(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     store.init()
