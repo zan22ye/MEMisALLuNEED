@@ -4,7 +4,7 @@ import argparse
 import errno
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Sequence
 from uuid import uuid4
@@ -212,6 +212,7 @@ def _print_written_ids(memories) -> None:
 class ChatRunResult:
     assistant_reply: str
     used_memories: list
+    rolled_turns: list[SessionTurn] = field(default_factory=list)
 
 
 def format_memory_trace(used_memories) -> str:
@@ -291,6 +292,7 @@ def run_chat_once(
     chat_model: ChatModel,
     formation_model: ChatModel,
     resume: bool = True,
+    form_rolled: bool = True,
 ) -> ChatRunResult:
     session = SessionState.load(session_path) if resume else SessionState.new()
     recalled_results = search_memories(
@@ -321,26 +323,28 @@ def run_chat_once(
     session.add_turn(turn)
     session.save(session_path)
 
-    formation = FormationService(model=formation_model, store=store)
     rolled_turns = session.roll_excess(
         max_turns=config.session.max_turns,
         max_tokens=config.session.max_tokens,
     )
-    for rolled_turn in rolled_turns:
-        recalled_memories = [
-            memory
-            for memory_id in rolled_turn.recalled_memory_ids
-            if (memory := store.get(memory_id)) is not None
-        ]
-        formation.form_from_chat_qa_turn(
-            session_id=session.session_id,
-            turn=rolled_turn,
-            recalled_memories=recalled_memories,
-        )
+    if form_rolled:
+        formation = FormationService(model=formation_model, store=store)
+        for rolled_turn in rolled_turns:
+            recalled_memories = [
+                memory
+                for memory_id in rolled_turn.recalled_memory_ids
+                if (memory := store.get(memory_id)) is not None
+            ]
+            formation.form_from_chat_qa_turn(
+                session_id=session.session_id,
+                turn=rolled_turn,
+                recalled_memories=recalled_memories,
+            )
     session.save(session_path)
     return ChatRunResult(
         assistant_reply=assistant_reply,
         used_memories=used_memories,
+        rolled_turns=rolled_turns,
     )
 
 

@@ -198,6 +198,11 @@ class FakeFormationModel:
         )
 
 
+class ExplodingFormationModel:
+    def complete(self, messages):
+        raise AssertionError("formation model should not run on chat send")
+
+
 def test_chat_send_uses_run_chat_path(tmp_path: Path, monkeypatch):
     config_path = tmp_path / "config.toml"
     config_path.write_text("placeholder", encoding="utf-8")
@@ -234,6 +239,68 @@ def test_chat_send_uses_run_chat_path(tmp_path: Path, monkeypatch):
 
     assert response["assistant_reply"] == "assistant reply"
     assert response["used_memories"][0]["content"] == "Project uses SQLite storage."
+
+
+def test_chat_send_enqueues_rolled_turn_without_running_formation(
+    tmp_path: Path,
+    monkeypatch,
+):
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("placeholder", encoding="utf-8")
+    state = UIState(db_path=tmp_path / "memory.db", config_path=config_path)
+    config = AppConfig(
+        chat_model=ModelRoleConfig(provider="openai", model="chat"),
+        formation_model=ModelRoleConfig(provider="openai", model="formation"),
+        session=SessionConfig(
+            max_turns=1,
+            max_tokens=100000,
+            recall_top_k=1,
+            recall_candidate_k=1,
+        ),
+        http=HttpConfig(request_timeout=60),
+        providers={
+            "openai": ProviderConfig(
+                api_key_env="OPENAI_API_KEY",
+                base_url="https://example.test/v1",
+            )
+        },
+    )
+    session_path = tmp_path / ".memisalluneed" / "session.json"
+    session_path.parent.mkdir()
+    session_path.write_text(
+        """
+{
+  "session_id": "session-1",
+  "created_at": "2026-05-09T00:00:00+00:00",
+  "updated_at": "2026-05-09T00:00:00+00:00",
+  "turns": [
+    {
+      "id": "old-turn",
+      "user_message": "old",
+      "assistant_message": "old answer",
+      "recalled_memory_ids": [],
+      "created_at": "2026-05-09T00:00:00+00:00"
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("memisalluneed.ui_server.load_config", lambda path: config)
+    monkeypatch.setattr(
+        "memisalluneed.ui_server.model_from_config",
+        lambda config, role: FakeReplyModel()
+        if role.model == "chat"
+        else ExplodingFormationModel(),
+    )
+
+    response = chat_send(state, "new message")
+
+    assert response["assistant_reply"] == "assistant reply"
+    assert response["written_memories"] == []
+    assert response["formation_jobs"][0]["turn_id"] == "old-turn"
+    assert response["formation_jobs"][0]["status"] == "pending"
+    assert MemoryStore(state.db_path).all() == []
 
 
 def test_chat_send_does_not_auto_write_memory_for_current_turn(

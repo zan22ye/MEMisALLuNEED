@@ -11,6 +11,7 @@ from urllib.parse import parse_qs, urlparse
 from memisalluneed.config import DEFAULT_CONFIG_PATH
 from memisalluneed.config import load_config
 from memisalluneed.export import export_jsonl_text
+from memisalluneed.formation_jobs import FormationJob, FormationJobStore
 from memisalluneed.schema import MemoryItem, create_memory_item
 from memisalluneed.search import search_memories
 from memisalluneed.session import SessionState
@@ -144,6 +145,22 @@ def session_path_for_state(state: UIState) -> Path:
     return _session_path_for_config(state.config_path)
 
 
+def job_store_path_for_state(state: UIState) -> Path:
+    return session_path_for_state(state).with_name("formation_jobs.json")
+
+
+def job_to_response(job) -> dict[str, object]:
+    return {
+        "id": job.id,
+        "turn_id": job.turn.id,
+        "status": job.status,
+        "written_memory_ids": list(job.written_memory_ids),
+        "error": job.error,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+    }
+
+
 def model_from_config(config, role):
     from memisalluneed.cli import _model_from_config
 
@@ -217,11 +234,20 @@ def chat_send(
         chat_model=model_from_config(config, config.chat_model),
         formation_model=model_from_config(config, config.formation_model),
         resume=resume,
+        form_rolled=False,
     )
+    job_store = FormationJobStore(job_store_path_for_state(state))
+    session = SessionState.load(session_path_for_state(state))
+    jobs = []
+    for turn in result.rolled_turns:
+        job = FormationJob.new(session_id=session.session_id, turn=turn)
+        job_store.append(job)
+        jobs.append(job)
     return {
         "assistant_reply": result.assistant_reply,
         "used_memories": [memory_to_response(memory) for memory in result.used_memories],
         "written_memories": [],
+        "formation_jobs": [job_to_response(job) for job in jobs],
     }
 
 
