@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import json
+import queue
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
+from memisalluneed.formation import FormationService
+from memisalluneed.models.base import ChatModel
 from memisalluneed.schema import utc_now
 from memisalluneed.session import SessionTurn
+from memisalluneed.store import MemoryStore
 
 JOB_STATUSES = {"pending", "running", "written", "failed"}
 
@@ -155,3 +161,70 @@ class FormationJobStore:
             ),
             encoding="utf-8",
         )
+
+
+class FormationWorker:
+    def __init__(
+        self,
+        *,
+        job_store: FormationJobStore,
+        memory_store: MemoryStore,
+        formation_model_factory: Callable[[], ChatModel],
+    ) -> None:
+        self.job_store = job_store
+        self.memory_store = memory_store
+        self.formation_model_factory = formation_model_factory
+        self._queue: queue.Queue[str] = queue.Queue()
+        self._thread: threading.Thread | None = None
+
+    def enqueue(self, job: FormationJob) -> None:
+        self._queue.put(job.id)
+
+    def enqueue_startup_jobs(self) -> None:
+        enqueued: set[str] = set()
+        for job in self.job_store.recover_interrupted_jobs():
+            self.enqueue(job)
+            enqueued.add(job.id)
+        for job in self.job_store.pending_jobs():
+            if job.id in enqueued:
+                continue
+            self.enqueue(job)
+
+    def start(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self.enqueue_startup_jobs()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def queue_size(self) -> int:
+        return self._queue.qsize()
+
+    def process_one(self, job: FormationJob) -> None:
+        self.job_store.mark_running(job.id)
+        try:
+            model = self.formation_model_factory()
+            formation = FormationService(model=model, store=self.memory_store)
+            recalled_memories = [
+                memory
+                for memory_id in job.turn.recalled_memory_ids
+                if (memory := self.memory_store.get(memory_id)) is not None
+            ]
+            written = formation.form_from_chat_qa_turn(
+                session_id=job.session_id,
+                turn=job.turn,
+                recalled_memories=recalled_memories,
+            )
+            self.job_store.mark_written(job.id, [memory.id for memory in written])
+        except Exception as error:
+            self.job_store.mark_failed(job.id, str(error))
+
+    def _run(self) -> None:
+        while True:
+            job_id = self._queue.get()
+            try:
+                job = self.job_store.get(job_id)
+                if job.status == "pending":
+                    self.process_one(job)
+            finally:
+                self._queue.task_done()
