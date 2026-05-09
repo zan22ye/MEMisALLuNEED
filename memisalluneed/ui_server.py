@@ -12,6 +12,7 @@ from memisalluneed.config import DEFAULT_CONFIG_PATH
 from memisalluneed.config import load_config
 from memisalluneed.export import export_jsonl_text
 from memisalluneed.formation_jobs import FormationJob, FormationJobStore
+from memisalluneed.formation_jobs import FormationWorker
 from memisalluneed.schema import MemoryItem, create_memory_item
 from memisalluneed.search import search_memories
 from memisalluneed.session import SessionState
@@ -27,6 +28,20 @@ STATIC_DIR = Path(__file__).parent / "ui_static"
 class UIState:
     db_path: Path = DEFAULT_DB_PATH
     config_path: Path = DEFAULT_CONFIG_PATH
+
+
+@dataclass
+class UIRuntime:
+    state: UIState
+    worker: FormationWorker | None = None
+
+    def start(self) -> None:
+        if self.worker is not None:
+            self.worker.start()
+
+    def enqueue(self, job) -> None:
+        if self.worker is not None:
+            self.worker.enqueue(job)
 
 
 def json_bytes(value: Any) -> bytes:
@@ -161,6 +176,31 @@ def job_to_response(job) -> dict[str, object]:
     }
 
 
+def job_store_for_state(state: UIState) -> FormationJobStore:
+    return FormationJobStore(job_store_path_for_state(state))
+
+
+def list_formation_jobs(state: UIState, *, limit: int = 20) -> dict[str, object]:
+    return {
+        "jobs": [
+            job_to_response(job)
+            for job in job_store_for_state(state).list(limit=limit)
+        ]
+    }
+
+
+def retry_formation_job(
+    state: UIState,
+    job_id: str,
+    *,
+    runtime: UIRuntime | None = None,
+) -> dict[str, object]:
+    job = job_store_for_state(state).reset_failed_to_pending(job_id)
+    if runtime is not None:
+        runtime.enqueue(job)
+    return {"job": job_to_response(job)}
+
+
 def model_from_config(config, role):
     from memisalluneed.cli import _model_from_config
 
@@ -222,6 +262,7 @@ def chat_send(
     message: str,
     *,
     resume: bool = True,
+    runtime: UIRuntime | None = None,
 ) -> dict[str, Any]:
     if not message.strip():
         raise ValueError("message cannot be empty")
@@ -236,12 +277,14 @@ def chat_send(
         resume=resume,
         form_rolled=False,
     )
-    job_store = FormationJobStore(job_store_path_for_state(state))
+    job_store = job_store_for_state(state)
     session = SessionState.load(session_path_for_state(state))
     jobs = []
     for turn in result.rolled_turns:
         job = FormationJob.new(session_id=session.session_id, turn=turn)
         job_store.append(job)
+        if runtime is not None:
+            runtime.enqueue(job)
         jobs.append(job)
     return {
         "assistant_reply": result.assistant_reply,
@@ -286,7 +329,7 @@ def parse_json_body(handler: SimpleHTTPRequestHandler) -> dict[str, Any]:
     return data
 
 
-def create_handler(state: UIState):
+def create_handler(state: UIState, runtime: UIRuntime | None = None):
     class UIRequestHandler(SimpleHTTPRequestHandler):
         def __init__(self, *args, **kwargs):
             super().__init__(*args, directory=str(STATIC_DIR), **kwargs)
@@ -351,6 +394,13 @@ def create_handler(state: UIState):
                         {"Content-Type": "application/x-ndjson; charset=utf-8"},
                         body,
                     )
+                elif parsed.path == "/api/formation/jobs":
+                    self.send_json(
+                        list_formation_jobs(
+                            state,
+                            limit=int(query.get("limit", ["20"])[0]),
+                        )
+                    )
                 else:
                     super().do_GET()
             except Exception as error:
@@ -362,13 +412,26 @@ def create_handler(state: UIState):
                     self.send_json({"memory": add_memory(state, parse_json_body(self))})
                 elif self.path == "/api/chat/send":
                     payload = parse_json_body(self)
-                    self.send_json(chat_send(state, str(payload.get("message", ""))))
+                    self.send_json(
+                        chat_send(
+                            state,
+                            str(payload.get("message", "")),
+                            runtime=runtime,
+                        )
+                    )
                 elif self.path == "/api/chat/new-session":
                     self.send_json(new_session(state))
                 elif self.path == "/api/chat/flush":
                     self.send_json(flush_session(state))
                 elif self.path == "/api/chat/clear":
                     self.send_json(clear_session(state))
+                elif self.path.startswith(
+                    "/api/formation/jobs/"
+                ) and self.path.endswith("/retry"):
+                    job_id = self.path.split("/")[-2]
+                    self.send_json(
+                        retry_formation_job(state, job_id, runtime=runtime)
+                    )
                 else:
                     self.send_error_json("not_found", "Unsupported route", 404)
             except Exception as error:
@@ -378,6 +441,17 @@ def create_handler(state: UIState):
 
 
 def serve_ui(state: UIState, *, host: str, port: int) -> None:
-    server = ThreadingHTTPServer((host, port), create_handler(state))
+    config = load_config(state.config_path)
+    worker = FormationWorker(
+        job_store=job_store_for_state(state),
+        memory_store=store_for_state(state),
+        formation_model_factory=lambda: model_from_config(
+            config,
+            config.formation_model,
+        ),
+    )
+    runtime = UIRuntime(state=state, worker=worker)
+    runtime.start()
+    server = ThreadingHTTPServer((host, port), create_handler(state, runtime=runtime))
     print(f"MEMisALLuNEED UI running at http://{host}:{port}")
     server.serve_forever()

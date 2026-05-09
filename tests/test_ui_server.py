@@ -8,7 +8,9 @@ from urllib.request import Request, urlopen
 
 from memisalluneed.config import AppConfig, HttpConfig, ModelRoleConfig, ProviderConfig
 from memisalluneed.config import SessionConfig
+from memisalluneed.formation_jobs import FormationJob, FormationJobStore
 from memisalluneed.schema import create_memory_item
+from memisalluneed.session import SessionTurn
 from memisalluneed.store import MemoryStore
 from memisalluneed.ui_server import UIState, build_status, error_response
 from memisalluneed.ui_server import (
@@ -20,8 +22,11 @@ from memisalluneed.ui_server import (
     export_memories,
     flush_session,
     get_memory,
+    job_store_path_for_state,
+    list_formation_jobs,
     list_memories,
     new_session,
+    retry_formation_job,
     search_memory_results,
 )
 
@@ -481,6 +486,45 @@ def test_flush_session_skips_already_formed_turns(tmp_path: Path, monkeypatch):
     assert len(MemoryStore(state.db_path).all()) == 1
 
 
+def make_ui_job(tmp_path: Path, status: str = "failed") -> FormationJob:
+    state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
+    turn = SessionTurn(
+        id="turn-1",
+        user_message="hello",
+        assistant_message="reply",
+        recalled_memory_ids=[],
+        created_at="2026-05-09T00:00:00+00:00",
+    )
+    job = FormationJob.new(session_id="session-1", turn=turn)
+    store = FormationJobStore(job_store_path_for_state(state))
+    store.append(job)
+    if status == "failed":
+        store.mark_failed(job.id, "failed once")
+    return store.get(job.id)
+
+
+def test_list_formation_jobs_returns_stable_shape(tmp_path: Path):
+    state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
+    job = make_ui_job(tmp_path, status="failed")
+
+    response = list_formation_jobs(state)
+
+    assert response["jobs"][0]["id"] == job.id
+    assert response["jobs"][0]["turn_id"] == "turn-1"
+    assert response["jobs"][0]["status"] == "failed"
+    assert response["jobs"][0]["error"] == "failed once"
+
+
+def test_retry_failed_formation_job_resets_to_pending(tmp_path: Path):
+    state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
+    job = make_ui_job(tmp_path, status="failed")
+
+    response = retry_formation_job(state, job.id)
+
+    assert response["job"]["status"] == "pending"
+    assert response["job"]["error"] is None
+
+
 def test_static_assets_exist():
     assert (STATIC_DIR / "index.html").exists()
     assert (STATIC_DIR / "app.js").exists()
@@ -499,7 +543,10 @@ def test_chat_send_response_shape_is_frontend_friendly(tmp_path: Path, monkeypat
     state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
     monkeypatch.setattr(
         "memisalluneed.ui_server.chat_send",
-        lambda state, message: {"assistant_reply": "hello", "used_memories": []},
+        lambda state, message, **kwargs: {
+            "assistant_reply": "hello",
+            "used_memories": [],
+        },
     )
     server = ThreadingHTTPServer(("127.0.0.1", 0), create_handler(state))
     thread = threading.Thread(target=server.serve_forever)
