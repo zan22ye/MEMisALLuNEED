@@ -2,6 +2,8 @@
 provider = "openai"
 model = "gpt-4.1"
 
+# The formation model can be a faster or cheaper model than the chat model.
+# It only needs to produce structured memory JSON.
 [formation_model]
 provider = "openai"
 model = "gpt-4.1-mini"
