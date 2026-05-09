@@ -90,7 +90,7 @@ Implementation details:
 
 Tokenization should remain local to `memisalluneed/search.py`, but the old overlap-oriented tokenizer API should be removed.
 
-The implementation should expose only the tokenizer needed by BM25, for example:
+The implementation should expose only the tokenizer needed by BM25:
 
 ```python
 tokenize_terms(text: str) -> list[str]
@@ -98,12 +98,32 @@ tokenize_terms(text: str) -> list[str]
 
 This tokenizer returns a token list, not a token set, because BM25 needs term frequency.
 
-The tokenizer should:
+The tokenizer should be recall-oriented rather than linguistically perfect. It should improve lexical recall for local memory content that mixes natural language, Chinese, English, commands, config keys, file paths, model names, and API-related identifiers.
+
+The first implementation should:
 
 - lowercase text;
-- split English, numbers, and mixed ASCII text with the existing regex approach;
-- add `jieba` tokens for Chinese text;
-- drop empty tokens.
+- normalize Unicode text before token extraction;
+- extract ASCII words, numbers, and technical fragments with regular expressions;
+- preserve useful mixed technical tokens such as `gpt-4.1`, `glm-4.7`, `openai_api_key`, `config.example.toml`, and `memory.db`;
+- split compound technical tokens into useful subparts, so `chat_model` can produce `chat_model`, `chat`, and `model`;
+- segment Chinese text with `jieba`;
+- add supplemental Chinese 2-gram and 3-gram tokens for continuous Chinese spans;
+- avoid single-character Chinese supplemental tokens;
+- remove punctuation-only tokens and empty tokens;
+- filter a small built-in stopword list for very common Chinese and English function words;
+- cap excessive repetition of the same token within one text so repeated words cannot dominate BM25 scoring.
+
+The tokenizer should not introduce a new dependency beyond `jieba`.
+
+The supplemental Chinese n-grams are meant to improve recall for short Chinese queries and phrases. They should be limited to 2-grams and 3-grams to avoid the high false-positive rate caused by single-character tokens.
+
+The built-in stopword list should stay intentionally small. It should remove obvious high-frequency function words, not domain terms. Example stopwords include:
+
+```text
+Chinese: 的 了 是 我 你 他 她 它 在 和 与 吗 呢 啊 这 那 一个
+English: the a an is are was were of to in on for and or
+```
 
 The implementation should not keep the old `tokenize(text) -> set[str]` helper. Tests should validate tokenization through the BM25 term-list tokenizer and through `search_memories`.
 
@@ -157,6 +177,11 @@ Required coverage:
 
 - BM25 returns positive scores for relevant English memory.
 - BM25 returns positive scores for relevant Chinese memory using `jieba`.
+- Tokenization preserves useful technical tokens such as model names, config keys, and file names.
+- Tokenization splits compound technical tokens into searchable subparts.
+- Chinese short-phrase recall benefits from 2-gram and 3-gram supplemental tokens.
+- Single-character Chinese supplemental tokens are not generated.
+- Built-in stopwords do not dominate scoring.
 - A memory matching more meaningful query terms ranks ahead of a weaker match.
 - A rare query term has more ranking impact than a common term.
 - A long weakly related memory does not outrank a shorter highly relevant memory only because it contains many extra words.
