@@ -96,6 +96,51 @@ textarea {
   padding: 8px 16px;
 }
 
+.formation-panel {
+  margin-top: 16px;
+}
+
+.section-header {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.section-header h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.job-counts {
+  color: #52606d;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.job-list {
+  display: grid;
+  gap: 6px;
+}
+
+.job-row {
+  align-items: center;
+  border: 1px solid #d8dee4;
+  border-radius: 6px;
+  display: flex;
+  font-size: 13px;
+  justify-content: space-between;
+  padding: 8px;
+}
+
+.job-row.failed {
+  border-color: #d66;
+}
+
+.job-row.written {
+  border-color: #6a8;
+}
+
 @media (max-width: 800px) {
   .memory-layout,
   .chat-layout {

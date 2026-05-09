@@ -531,6 +531,16 @@ def test_static_assets_exist():
     assert (STATIC_DIR / "styles.css").exists()
 
 
+def test_static_assets_include_formation_job_panel_hooks():
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    app_js = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="formation-jobs"' in html
+    assert 'id="formation-job-counts"' in html
+    assert "loadFormationJobs" in app_js
+    assert "retryFormationJob" in app_js
+
+
 def test_create_handler_returns_handler_class(tmp_path: Path):
     state = UIState(db_path=tmp_path / "memory.db", config_path=tmp_path / "config.toml")
 
