@@ -30,9 +30,7 @@ In scope:
 - Use BM25 for `search_memories(store, query, top_k)`.
 - Keep `search_memories` as the public search entry point.
 - Keep `MemorySearchResult` and its `score` field.
-- Continue using the existing tokenizer strategy:
-  - regex tokens for English, numbers, and mixed ASCII text;
-  - `jieba` tokens for Chinese text.
+- Replace the overlap-era tokenizer API with a BM25 term-list tokenizer.
 - Return only results with positive BM25 scores.
 - Continue marking returned memories as recalled.
 - Preserve current call sites in CLI, chat recall, and UI search.
@@ -90,26 +88,40 @@ Implementation details:
 
 ## Tokenization
 
-Tokenization should remain centralized in `memisalluneed/search.py`.
+Tokenization should remain local to `memisalluneed/search.py`, but the old overlap-oriented tokenizer API should be removed.
 
-The tokenizer should continue to:
+The implementation should expose only the tokenizer needed by BM25, for example:
+
+```python
+tokenize_terms(text: str) -> list[str]
+```
+
+This tokenizer returns a token list, not a token set, because BM25 needs term frequency.
+
+The tokenizer should:
 
 - lowercase text;
 - split English, numbers, and mixed ASCII text with the existing regex approach;
 - add `jieba` tokens for Chinese text;
 - drop empty tokens.
 
-BM25 needs term frequencies, so the implementation should add an internal token-list helper while preserving the existing ability to reason about unique tokens where needed.
+The implementation should not keep the old `tokenize(text) -> set[str]` helper. Tests should validate tokenization through the BM25 term-list tokenizer and through `search_memories`.
 
 ## Compatibility
 
 The core compatibility requirement is to keep `search_memories` stable, because that is what CLI, UI, and chat recall use.
 
-`score_memory(query, item)` is not a good core API for BM25 because BM25 needs corpus-level statistics. The implementation may keep `score_memory` as a compatibility helper for existing direct tests or local callers, but it should not be the main search path.
+The overlap-era helpers should be removed:
+
+- remove `score_memory(query, item)`;
+- remove `tokenize(text) -> set[str]`.
+
+These functions are not used by in-repo production call sites outside the current search implementation, and keeping them would preserve concepts that no longer match the BM25 design.
 
 Recommended internal shape:
 
 ```python
+tokenize_terms(text) -> list[str]
 score_memories_bm25(query, items) -> list[MemorySearchResult]
 ```
 
