@@ -1,31 +1,123 @@
+from collections import Counter
 from dataclasses import replace
 
 from memisalluneed.schema import create_memory_item
-from memisalluneed.search import MemorySearchResult, search_memories, score_memory
-from memisalluneed.search import tokenize
+from memisalluneed.search import (
+    MemorySearchResult,
+    score_memories_bm25,
+    search_memories,
+    tokenize_terms,
+)
 from memisalluneed.store import MemoryStore
 
 
-def test_score_memory_uses_token_overlap():
+def test_tokenize_terms_preserves_technical_tokens():
+    tokens = tokenize_terms(
+        "Use GLM-4.7 with OPENAI_API_KEY, config.example.toml, and memory.db."
+    )
+
+    assert "glm-4.7" in tokens
+    assert "openai_api_key" in tokens
+    assert "config.example.toml" in tokens
+    assert "memory.db" in tokens
+
+
+def test_tokenize_terms_splits_compound_technical_tokens():
+    tokens = tokenize_terms("chat_model formation-worker zai-org")
+
+    assert "chat_model" in tokens
+    assert "chat" in tokens
+    assert "model" in tokens
+    assert "formation-worker" in tokens
+    assert "formation" in tokens
+    assert "worker" in tokens
+    assert "zai-org" in tokens
+    assert "zai" in tokens
+    assert "org" in tokens
+
+
+def test_tokenize_terms_adds_chinese_two_and_three_grams():
+    tokens = tokenize_terms("用户喜欢喝冰美式")
+
+    assert "冰美" in tokens
+    assert "美式" in tokens
+    assert "冰美式" in tokens
+
+
+def test_tokenize_terms_does_not_add_chinese_single_character_supplements():
+    tokens = tokenize_terms("冰美式")
+
+    assert "冰" not in tokens
+    assert "美" not in tokens
+    assert "式" not in tokens
+
+
+def test_tokenize_terms_filters_small_stopword_list():
+    tokens = tokenize_terms("我 是 the memory recall")
+
+    assert "我" not in tokens
+    assert "是" not in tokens
+    assert "the" not in tokens
+    assert "memory" in tokens
+    assert "recall" in tokens
+
+
+def test_tokenize_terms_caps_excessive_repetition():
+    tokens = tokenize_terms("memory " * 20)
+    counts = Counter(tokens)
+
+    assert counts["memory"] == 8
+
+
+def test_score_memories_bm25_returns_positive_scores_for_english_memory():
     item = create_memory_item("External knowledge is acquired when memory is insufficient.")
 
-    score = score_memory("when should external knowledge be used", item)
+    results = score_memories_bm25(
+        "when should external knowledge be used",
+        [item],
+    )
 
-    assert score > 0
+    assert len(results) == 1
+    assert results[0].item.id == item.id
+    assert results[0].score > 0
 
 
-def test_score_memory_handles_chinese_overlap_without_spaces():
+def test_score_memories_bm25_returns_positive_scores_for_chinese_memory():
     item = create_memory_item("用户喜欢喝冰美式。")
 
-    score = score_memory("他喜欢喝什么", item)
+    results = score_memories_bm25("他喜欢喝什么", [item])
 
-    assert score > 0
+    assert len(results) == 1
+    assert results[0].item.id == item.id
+    assert results[0].score > 0
 
 
-def test_tokenize_uses_jieba_for_chinese_words():
-    tokens = tokenize("自然语言处理")
+def test_score_memories_bm25_gives_rare_terms_more_impact():
+    common_only = create_memory_item("memory memory memory recall")
+    rare_match = create_memory_item("memory recall kanban")
 
-    assert "自然语言" in tokens
+    results = score_memories_bm25(
+        "memory kanban",
+        [common_only, rare_match],
+    )
+
+    assert results[0].item.id == rare_match.id
+    assert results[0].score > results[1].score
+
+
+def test_score_memories_bm25_applies_length_normalization():
+    concise = create_memory_item("memory recall bm25")
+    long_weak = create_memory_item(
+        "memory recall "
+        + " ".join(f"filler{i}" for i in range(80))
+    )
+
+    results = score_memories_bm25(
+        "memory recall bm25",
+        [long_weak, concise],
+    )
+
+    assert results[0].item.id == concise.id
 
 
 def test_search_returns_relevant_items_first(tmp_path):
