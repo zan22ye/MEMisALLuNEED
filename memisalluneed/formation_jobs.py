@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
+from memisalluneed.file_io import write_json_atomic
 from memisalluneed.formation import FormationService
 from memisalluneed.models.base import ChatModel
 from memisalluneed.schema import utc_now
@@ -15,6 +16,18 @@ from memisalluneed.session import SessionTurn
 from memisalluneed.store import MemoryStore
 
 JOB_STATUSES = {"pending", "running", "written", "failed"}
+
+
+def _turn_already_formed(memory_store: MemoryStore, turn_id: str) -> bool:
+    """Return True if a memory with matching chat_qa turn_id metadata exists."""
+    for memory in memory_store.all():
+        if (
+            memory.metadata.get("source") == "chat_session"
+            and memory.metadata.get("formation_kind") == "chat_qa"
+            and memory.metadata.get("turn_id") == turn_id
+        ):
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -77,70 +90,81 @@ class FormationJob:
 class FormationJobStore:
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self._lock = threading.RLock()
 
     def append(self, job: FormationJob) -> None:
-        jobs = self._load()
-        jobs.append(job)
-        self._save(jobs)
+        with self._lock:
+            jobs = self._load()
+            jobs.append(job)
+            self._save(jobs)
 
     def list(self, *, limit: int | None = None) -> list[FormationJob]:
-        jobs = sorted(self._load(), key=lambda job: job.created_at, reverse=True)
-        if limit is not None:
-            return jobs[:limit]
-        return jobs
+        with self._lock:
+            jobs = sorted(self._load(), key=lambda job: job.created_at, reverse=True)
+            if limit is not None:
+                return jobs[:limit]
+            return jobs
 
     def get(self, job_id: str) -> FormationJob:
-        for job in self._load():
-            if job.id == job_id:
-                return job
-        raise KeyError(f"Formation job not found: {job_id}")
+        with self._lock:
+            for job in self._load():
+                if job.id == job_id:
+                    return job
+            raise KeyError(f"Formation job not found: {job_id}")
 
     def mark_running(self, job_id: str) -> None:
-        self._replace(job_id, status="running", error=None)
+        with self._lock:
+            self._replace(job_id, status="running", error=None)
 
     def mark_written(self, job_id: str, memory_ids: list[str]) -> None:
-        self._replace(
-            job_id,
-            status="written",
-            written_memory_ids=list(memory_ids),
-            error=None,
-        )
+        with self._lock:
+            self._replace(
+                job_id,
+                status="written",
+                written_memory_ids=list(memory_ids),
+                error=None,
+            )
 
     def mark_failed(self, job_id: str, error: str) -> None:
-        self._replace(job_id, status="failed", error=error)
+        with self._lock:
+            self._replace(job_id, status="failed", error=error)
 
     def reset_failed_to_pending(self, job_id: str) -> FormationJob:
-        job = self.get(job_id)
-        if job.status != "failed":
-            raise ValueError("Only failed formation jobs can be retried")
-        self._replace(job_id, status="pending", error=None)
-        return self.get(job_id)
+        with self._lock:
+            job = self.get(job_id)
+            if job.status != "failed":
+                raise ValueError("Only failed formation jobs can be retried")
+            self._replace(job_id, status="pending", error=None)
+            return self.get(job_id)
 
     def recover_interrupted_jobs(self) -> list[FormationJob]:
-        recovered: list[FormationJob] = []
-        for job in self._load():
-            if job.status == "running":
-                self._replace(job.id, status="pending", error=None)
-                recovered.append(self.get(job.id))
-        return recovered
+        with self._lock:
+            recovered: list[FormationJob] = []
+            for job in self._load():
+                if job.status == "running":
+                    self._replace(job.id, status="pending", error=None)
+                    recovered.append(self.get(job.id))
+            return recovered
 
     def pending_jobs(self) -> list[FormationJob]:
-        return [job for job in self._load() if job.status == "pending"]
+        with self._lock:
+            return [job for job in self._load() if job.status == "pending"]
 
     def _replace(self, job_id: str, **changes) -> None:
-        jobs = []
-        found = False
-        for job in self._load():
-            if job.id == job_id:
-                data = job.to_dict()
-                data.update(changes)
-                data["updated_at"] = utc_now()
-                job = FormationJob.from_dict(data)
-                found = True
-            jobs.append(job)
-        if not found:
-            raise KeyError(f"Formation job not found: {job_id}")
-        self._save(jobs)
+        with self._lock:
+            jobs = []
+            found = False
+            for job in self._load():
+                if job.id == job_id:
+                    data = job.to_dict()
+                    data.update(changes)
+                    data["updated_at"] = utc_now()
+                    job = FormationJob.from_dict(data)
+                    found = True
+                jobs.append(job)
+            if not found:
+                raise KeyError(f"Formation job not found: {job_id}")
+            self._save(jobs)
 
     def _load(self) -> list[FormationJob]:
         if not self.path.exists():
@@ -151,16 +175,7 @@ class FormationJobStore:
         return [FormationJob.from_dict(item) for item in data if isinstance(item, dict)]
 
     def _save(self, jobs: list[FormationJob]) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(
-                [job.to_dict() for job in jobs],
-                ensure_ascii=False,
-                indent=2,
-                sort_keys=True,
-            ),
-            encoding="utf-8",
-        )
+        write_json_atomic(self.path, [job.to_dict() for job in jobs])
 
 
 class FormationWorker:
@@ -201,6 +216,9 @@ class FormationWorker:
         return self._queue.qsize()
 
     def process_one(self, job: FormationJob) -> None:
+        if _turn_already_formed(self.memory_store, job.turn.id):
+            self.job_store.mark_written(job.id, [])
+            return
         self.job_store.mark_running(job.id)
         try:
             model = self.formation_model_factory()

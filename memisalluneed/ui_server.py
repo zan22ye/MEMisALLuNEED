@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from dataclasses import dataclass
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
+
+import httpx
 
 from memisalluneed.config import DEFAULT_CONFIG_PATH
 from memisalluneed.config import load_config
@@ -58,6 +61,25 @@ def error_response(
         JSON_HEADERS,
         json_bytes({"error": {"type": error_type, "message": message}}),
     )
+
+
+def error_response_for_exception(error: Exception) -> tuple[int, str, str]:
+    """Map an exception to (http_status, error_type, message) for use in HTTP responses."""
+    if isinstance(error, json.JSONDecodeError):
+        return 400, "bad_request", str(error)
+    if isinstance(error, ValueError):
+        return 400, "bad_request", str(error)
+    if isinstance(error, KeyError):
+        return 404, "not_found", str(error)
+    if isinstance(error, RuntimeError) and "Missing API key environment variable" in str(error):
+        return 503, "service_unavailable", str(error)
+    if isinstance(error, httpx.TimeoutException):
+        return 504, "gateway_timeout", str(error)
+    if isinstance(error, httpx.HTTPStatusError):
+        return 502, "bad_gateway", str(error)
+    if isinstance(error, sqlite3.Error):
+        return 500, "internal_error", str(error)
+    return 500, "internal_error", str(error)
 
 
 def build_status(state: UIState) -> dict[str, object]:
@@ -230,6 +252,14 @@ def turn_already_formed(store: MemoryStore, turn_id: str) -> bool:
     return False
 
 
+def turn_has_active_job(job_store: FormationJobStore, turn_id: str) -> bool:
+    """Return True if the job store has a pending, running, or written job for turn_id."""
+    for job in job_store.list():
+        if job.turn.id == turn_id and job.status in {"pending", "running", "written"}:
+            return True
+    return False
+
+
 def recalled_memories_for_turn(store: MemoryStore, turn) -> list[MemoryItem]:
     return [
         memory
@@ -240,12 +270,15 @@ def recalled_memories_for_turn(store: MemoryStore, turn) -> list[MemoryItem]:
 
 def form_unwritten_turns(state: UIState, config, formation_model, *, latest_only: bool):
     store = store_for_state(state)
+    job_store = job_store_for_state(state)
     session = SessionState.load(session_path_for_state(state))
     turns = session.turns[-1:] if latest_only and session.turns else session.turns
     formation = formation_service(model=formation_model, store=store)
     written = []
     for turn in turns:
         if turn_already_formed(store, turn.id):
+            continue
+        if turn_has_active_job(job_store, turn.id):
             continue
         written.extend(
             formation.form_from_chat_qa_turn(
@@ -404,7 +437,8 @@ def create_handler(state: UIState, runtime: UIRuntime | None = None):
                 else:
                     super().do_GET()
             except Exception as error:
-                self.send_error_json(type(error).__name__, str(error), 400)
+                status, error_type, message = error_response_for_exception(error)
+                self.send_error_json(error_type, message, status)
 
         def do_POST(self) -> None:
             try:
@@ -435,7 +469,8 @@ def create_handler(state: UIState, runtime: UIRuntime | None = None):
                 else:
                     self.send_error_json("not_found", "Unsupported route", 404)
             except Exception as error:
-                self.send_error_json(type(error).__name__, str(error), 400)
+                status, error_type, message = error_response_for_exception(error)
+                self.send_error_json(error_type, message, status)
 
     return UIRequestHandler
 

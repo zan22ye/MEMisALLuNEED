@@ -21,7 +21,7 @@ class OpenAICompatibleChatModel:
         self.provider = provider
         self.model = model
         self.timeout = timeout
-        self.client = client or httpx.Client(timeout=timeout)
+        self._injected_client = client
 
     def complete(self, messages: list[ChatMessage]) -> str:
         api_key = os.environ.get(self.provider.api_key_env)
@@ -29,8 +29,18 @@ class OpenAICompatibleChatModel:
             raise RuntimeError(
                 f"Missing API key environment variable: {self.provider.api_key_env}"
             )
+        if self._injected_client is not None:
+            return self._do_complete(self._injected_client, api_key, messages)
+        with httpx.Client(timeout=self.timeout) as client:
+            return self._do_complete(client, api_key, messages)
 
-        response = self.client.post(
+    def _do_complete(
+        self,
+        client: httpx.Client,
+        api_key: str,
+        messages: list[ChatMessage],
+    ) -> str:
+        response = client.post(
             f"{self.provider.base_url.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
             json={

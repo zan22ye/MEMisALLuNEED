@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
+from memisalluneed.file_io import write_json_atomic
 from memisalluneed.schema import utc_now
 
 DEFAULT_SESSION_PATH = Path(".memisalluneed") / "session.json"
@@ -102,12 +103,7 @@ class SessionState:
 
     def save(self, path: str | Path) -> None:
         self.updated_at = utc_now()
-        session_path = Path(path)
-        session_path.parent.mkdir(parents=True, exist_ok=True)
-        session_path.write_text(
-            json.dumps(self.to_dict(), ensure_ascii=False, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
+        write_json_atomic(Path(path), self.to_dict())
 
     def clear_file(self, path: str | Path) -> None:
         session_path = Path(path)
